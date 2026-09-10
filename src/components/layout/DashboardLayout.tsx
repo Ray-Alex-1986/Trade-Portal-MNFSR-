@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, FileText, Package, AlertTriangle, Users, Settings,
   ClipboardList, BarChart3, Bell, Shield, BookOpen, LogOut, Menu, X,
-  ChevronDown, Building2, FileCheck, Search, Moon, Sun, Database
+  ChevronDown, FileCheck, Search, Moon, Sun, Database
 } from 'lucide-react';
 
 const exporterNav = [

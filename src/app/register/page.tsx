@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Building2, ChevronRight, ChevronLeft, CheckCircle, AlertCircle, Upload } from 'lucide-react';
+import { ChevronRight, ChevronLeft, CheckCircle, AlertCircle, Upload } from 'lucide-react';
 import Image from 'next/image';
 import { PROVINCES, DISTRICTS, PRODUCTS, mockVerificationAPI } from '@/lib/mock-data';
 import { generateId } from '@/lib/utils';

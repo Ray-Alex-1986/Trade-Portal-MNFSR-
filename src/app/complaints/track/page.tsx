@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Building2, Search, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
+import { Search, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import Image from 'next/image';
 import { mockComplaints } from '@/lib/mock-data';
 import { getStatusColor } from '@/lib/utils';

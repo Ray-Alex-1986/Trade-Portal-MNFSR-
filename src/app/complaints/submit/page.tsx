@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Building2, CheckCircle, Upload } from 'lucide-react';
+import { CheckCircle, Upload } from 'lucide-react';
 import Image from 'next/image';
 import { COUNTRIES, COMPLAINT_CATEGORIES } from '@/lib/mock-data';
 import { generateId } from '@/lib/utils';

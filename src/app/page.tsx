@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Building2, FileText, Shield, AlertTriangle, TrendingUp, Globe, Users, Package, BarChart3, Phone, Mail, ChevronRight, ExternalLink } from 'lucide-react';
+import { FileText, Shield, AlertTriangle, TrendingUp, Globe, Users, Package, BarChart3, Phone, Mail, ChevronRight, ExternalLink } from 'lucide-react';
 import { publicStats, monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
 import { formatNumber } from '@/lib/utils';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
@@ -87,9 +87,7 @@ export default function HomePage() {
           <div className="flex flex-wrap items-center justify-center gap-8 md:gap-16">
             {['MNFSR', 'Ministry of Commerce', 'TDAP', 'NAFSA'].map(org => (
               <div key={org} className="flex items-center gap-2 text-gray-400">
-                <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                  <Building2 className="w-5 h-5" />
-                </div>
+                <Image src="/govt-pakistan-logo.png" alt={org} width={40} height={40} />
                 <span className="text-sm font-medium text-gray-500">{org}</span>
               </div>
             ))}
@@ -221,7 +219,7 @@ export default function HomePage() {
               <p className="text-sm text-gray-500">Response within 24 hours</p>
             </div>
             <div className="card p-6 text-center">
-              <Building2 className="w-8 h-8 text-gov-green-500 mx-auto mb-3" />
+              <Image src="/govt-pakistan-logo.png" alt="Office" width={32} height={32} className="mx-auto mb-3" />
               <h4 className="font-semibold text-gray-900 mb-1">Office</h4>
               <p className="text-sm text-gray-500">TDAP Head Office</p>
               <p className="text-sm text-gray-500">Islamabad, Pakistan</p>
@@ -236,7 +234,7 @@ export default function HomePage() {
           <div className="grid md:grid-cols-4 gap-8 mb-8">
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <Building2 className="w-6 h-6 text-gov-gold-400" />
+                <Image src="/govt-pakistan-logo.png" alt="Export Portal" width={24} height={24} />
                 <span className="text-white font-semibold">Export Portal</span>
               </div>
               <p className="text-sm">National Export Registration, Certification & Complaint Management Portal of Pakistan.</p>
