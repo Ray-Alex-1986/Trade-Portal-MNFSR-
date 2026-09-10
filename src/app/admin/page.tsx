@@ -119,7 +119,7 @@ export default function AdminDashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v/1000000).toFixed(1)}M`} />
-                <Tooltip formatter={(v: number) => `$${(v/1000000).toFixed(1)}M`} />
+                <Tooltip formatter={(v: any) => `$${(Number(v)/1000000).toFixed(1)}M`} />
                 <Line type="monotone" dataKey="value" stroke="#D4AF37" strokeWidth={2} dot={{ fill: '#D4AF37' }} />
               </LineChart>
             </ResponsiveContainer>
@@ -144,7 +144,7 @@ export default function AdminDashboardPage() {
             <h3 className="font-semibold text-gray-900 mb-4">Exports by Destination</h3>
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
-                <Pie data={exportsByCountry.slice(0, 8)} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name }) => name.substring(0, 8)}>
+                <Pie data={exportsByCountry.slice(0, 8)} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name }) => (name || '').substring(0, 8)}>
                   {exportsByCountry.slice(0, 8).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Tooltip />
@@ -155,7 +155,7 @@ export default function AdminDashboardPage() {
             <h3 className="font-semibold text-gray-900 mb-4">Company Verification Status</h3>
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
-                <Pie data={verificationStatusData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>
+                <Pie data={verificationStatusData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, value }: any) => `${name || ''}: ${value || 0}`}>
                   {verificationStatusData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Tooltip />

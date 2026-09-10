@@ -99,7 +99,7 @@ export default function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v/1000000).toFixed(1)}M`} />
-                <Tooltip formatter={(v: number) => `$${(v/1000000).toFixed(1)}M`} />
+                <Tooltip formatter={(v: any) => `$${(Number(v)/1000000).toFixed(1)}M`} />
                 <Line type="monotone" dataKey="value" stroke="#D4AF37" strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
@@ -120,7 +120,7 @@ export default function DashboardPage() {
             <h3 className="font-semibold text-gray-900 mb-4">Record Status Distribution</h3>
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
-                <Pie data={statusDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>
+                <Pie data={statusDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, value }: any) => `${name || ''}: ${value || 0}`}>
                   {statusDistribution.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Tooltip />

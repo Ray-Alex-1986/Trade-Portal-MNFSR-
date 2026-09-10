@@ -147,7 +147,7 @@ export default function HomePage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${(v/1000000).toFixed(1)}M`} />
-                  <Tooltip formatter={(v: number) => `$${(v/1000000).toFixed(1)}M`} />
+                  <Tooltip formatter={(v: any) => `$${(Number(v)/1000000).toFixed(1)}M`} />
                   <Line type="monotone" dataKey="value" stroke="#D4AF37" strokeWidth={2} dot={{ fill: '#D4AF37' }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -168,7 +168,7 @@ export default function HomePage() {
               <h4 className="font-semibold text-gray-900 mb-4">Exports by Destination Country</h4>
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
-                  <Pie data={exportsByCountry} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                  <Pie data={exportsByCountry} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({ name, percent }: any) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`} labelLine={false}>
                     {exportsByCountry.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip />
