@@ -3,14 +3,27 @@
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { mockUsers } from '@/lib/mock-data';
-import { getStatusColor } from '@/lib/utils';
-import { Search, Plus, Edit, Shield, UserCheck, UserX } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Shield, UserCheck, UserX, X, Save, CheckCircle } from 'lucide-react';
+
+interface UserState {
+  id: string; full_name: string; email: string; role: string; institution?: string | null;
+  is_active: boolean; last_login?: string | null;
+}
 
 export default function UserManagementPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+  const [users, setUsers] = useState<UserState[]>(mockUsers.map(u => ({ ...u })));
+  const [editingUser, setEditingUser] = useState<UserState | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [toast, setToast] = useState('');
 
-  const filtered = mockUsers.filter(u => {
+  const [newUser, setNewUser] = useState({ full_name: '', email: '', role: 'exporter', institution: '' });
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  const filtered = users.filter(u => {
     const matchSearch = !search || u.full_name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
     const matchRole = !roleFilter || u.role === roleFilter;
     return matchSearch && matchRole;
@@ -22,16 +35,130 @@ export default function UserManagementPage() {
     tic: 'TIC', exporter: 'Exporter', buyer: 'Buyer', auditor: 'Auditor',
   };
 
+  const handleEdit = (user: UserState) => { setEditingUser({ ...user }); };
+  const handleSaveEdit = () => {
+    if (!editingUser) return;
+    setUsers(prev => prev.map(u => u.id === editingUser.id ? editingUser : u));
+    showToast(`User "${editingUser.full_name}" updated successfully`);
+    setEditingUser(null);
+  };
+
+  const handleToggleActive = (userId: string) => {
+    setUsers(prev => prev.map(u => {
+      if (u.id === userId) {
+        const newStatus = !u.is_active;
+        showToast(`User "${u.full_name}" ${newStatus ? 'activated' : 'deactivated'}`);
+        return { ...u, is_active: newStatus };
+      }
+      return u;
+    }));
+  };
+
+  const handleDelete = (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    setUsers(prev => prev.filter(u => u.id !== userId));
+    setDeleteConfirm(null);
+    showToast(`User "${user?.full_name}" deleted successfully`);
+  };
+
+  const handleAddUser = () => {
+    if (!newUser.full_name || !newUser.email) return;
+    const id = 'usr_' + Date.now();
+    setUsers(prev => [...prev, { id, full_name: newUser.full_name, email: newUser.email, role: newUser.role, institution: newUser.institution || null, is_active: true, last_login: null }]);
+    showToast(`User "${newUser.full_name}" added successfully`);
+    setNewUser({ full_name: '', email: '', role: 'exporter', institution: '' });
+    setShowAdd(false);
+  };
+
   return (
     <DashboardLayout>
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg animate-pulse">
+          <CheckCircle className="w-4 h-4" /> {toast}
+        </div>
+      )}
+
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
             <p className="text-gray-500">Manage system users, roles, and permissions</p>
           </div>
-          <button className="btn-primary flex items-center gap-2"><Plus className="w-4 h-4" /> Add User</button>
+          <button onClick={() => setShowAdd(true)} className="btn-primary flex items-center gap-2"><Plus className="w-4 h-4" /> Add User</button>
         </div>
+
+        {/* Add User Modal */}
+        {showAdd && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold">Add New User</h2>
+                <button onClick={() => setShowAdd(false)} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="space-y-3">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label><input value={newUser.full_name} onChange={e => setNewUser({ ...newUser, full_name: e.target.value })} className="input-field" placeholder="Enter full name" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Email *</label><input type="email" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} className="input-field" placeholder="Enter email" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                  <select value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })} className="input-field">
+                    {Object.entries(roleLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Institution</label><input value={newUser.institution} onChange={e => setNewUser({ ...newUser, institution: e.target.value })} className="input-field" placeholder="e.g., TDAP, NAFSA" /></div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={handleAddUser} disabled={!newUser.full_name || !newUser.email} className="btn-primary flex-1 disabled:opacity-50">Add User</button>
+                <button onClick={() => setShowAdd(false)} className="btn-outline flex-1">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit User Modal */}
+        {editingUser && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold">Edit User</h2>
+                <button onClick={() => setEditingUser(null)} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="space-y-3">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label><input value={editingUser.full_name} onChange={e => setEditingUser({ ...editingUser, full_name: e.target.value })} className="input-field" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" value={editingUser.email} onChange={e => setEditingUser({ ...editingUser, email: e.target.value })} className="input-field" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                  <select value={editingUser.role} onChange={e => setEditingUser({ ...editingUser, role: e.target.value })} className="input-field">
+                    {Object.entries(roleLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Institution</label><input value={editingUser.institution || ''} onChange={e => setEditingUser({ ...editingUser, institution: e.target.value || null })} className="input-field" /></div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={editingUser.is_active} onChange={e => setEditingUser({ ...editingUser, is_active: e.target.checked })} className="rounded" id="edit-active" />
+                  <label htmlFor="edit-active" className="text-sm text-gray-700">Active</label>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={handleSaveEdit} className="btn-primary flex-1 flex items-center justify-center gap-2"><Save className="w-4 h-4" /> Save Changes</button>
+                <button onClick={() => setEditingUser(null)} className="btn-outline flex-1">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirm Modal */}
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 text-center">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Delete User?</h3>
+              <p className="text-gray-500 text-sm mb-6">This will permanently remove <strong>{users.find(u => u.id === deleteConfirm)?.full_name}</strong> from the system.</p>
+              <div className="flex gap-3">
+                <button onClick={() => handleDelete(deleteConfirm)} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex-1">Delete</button>
+                <button onClick={() => setDeleteConfirm(null)} className="btn-outline flex-1">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="card">
           <div className="p-4 border-b flex flex-col md:flex-row gap-3">
@@ -76,8 +203,11 @@ export default function UserManagementPage() {
                     <td className="p-3 text-gray-500">{user.last_login ? new Date(user.last_login).toLocaleDateString() : '-'}</td>
                     <td className="p-3">
                       <div className="flex gap-2">
-                        <button className="p-1.5 rounded hover:bg-gray-100" title="Edit"><Edit className="w-4 h-4 text-gray-500" /></button>
-                        <button className="p-1.5 rounded hover:bg-gray-100" title="Toggle Active">{user.is_active ? <UserX className="w-4 h-4 text-red-500" /> : <UserCheck className="w-4 h-4 text-green-500" />}</button>
+                        <button onClick={() => handleEdit(user)} className="p-1.5 rounded hover:bg-blue-50" title="Edit"><Edit className="w-4 h-4 text-blue-500" /></button>
+                        <button onClick={() => handleToggleActive(user.id)} className="p-1.5 rounded hover:bg-gray-100" title={user.is_active ? 'Deactivate' : 'Activate'}>
+                          {user.is_active ? <UserX className="w-4 h-4 text-orange-500" /> : <UserCheck className="w-4 h-4 text-green-500" />}
+                        </button>
+                        <button onClick={() => setDeleteConfirm(user.id)} className="p-1.5 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-4 h-4 text-red-400" /></button>
                       </div>
                     </td>
                   </tr>
@@ -85,6 +215,7 @@ export default function UserManagementPage() {
               </tbody>
             </table>
           </div>
+          <div className="p-3 border-t text-sm text-gray-500">Showing {filtered.length} of {users.length} users</div>
         </div>
       </div>
     </DashboardLayout>
