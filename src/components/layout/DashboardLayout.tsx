@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, isAdmin } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -67,12 +68,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="flex flex-col h-full">
             {/* Logo */}
             <div className="flex items-center gap-3 px-4 py-5 border-b border-gov-green-600">
-              <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
-                <Building2 className="w-6 h-6 text-gov-green-500" />
+              <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center p-0.5">
+                <Image src="/govt-pakistan-logo.png" alt="GoP" width={36} height={36} />
               </div>
               <div>
                 <p className="font-bold text-sm leading-tight">Export Portal</p>
-                <p className="text-xs text-gov-green-200">MNFSR | MoC</p>
+                <p className="text-xs text-gov-green-200">Government of Pakistan</p>
               </div>
             </div>
 

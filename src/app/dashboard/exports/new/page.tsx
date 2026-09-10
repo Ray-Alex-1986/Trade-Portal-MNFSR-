@@ -4,17 +4,20 @@ import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useRouter } from 'next/navigation';
 import { PRODUCTS, COUNTRIES, PROVINCES, DISTRICTS, PORTS, HS_CODES } from '@/lib/mock-data';
-import { ChevronRight, ChevronLeft, CheckCircle, Upload } from 'lucide-react';
+import { ChevronRight, ChevronLeft, CheckCircle, Upload, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 
 const steps = ['Exporter Info', 'Export Item', 'Buyer Info', 'Shipment', 'Documents'];
 
 const DOC_TYPES = [
-  "Buyer's Quality Requirement Sheet", "SPS Certificate", "Pre-Shipment Inspection (PSI) Report",
+  "Buyer's Quality Requirement Sheet", "DDP SPS Certificate", "Pre-Shipment Inspection (PSI) Report",
   "Purchase Order / Export Contract", "Commercial Invoice", "Packing List",
   "Certificate of Origin", "Phytosanitary Certificate", "Laboratory Test Report",
   "Bill of Lading / Airway Bill", "Additional Supporting Documents"
 ];
+
+// Mandatory documents that must be uploaded before submission
+const MANDATORY_DOCS = ["DDP SPS Certificate", "Pre-Shipment Inspection (PSI) Report"];
 
 export default function NewExportRecordPage() {
   const router = useRouter();
@@ -36,6 +39,16 @@ export default function NewExportRecordPage() {
     dest_country: '', dest_port: '', departure_port: 'Karachi Port', transport_mode: 'Sea',
     shipping_company: '', container: '', bol_number: '', departure_date: '', arrival_date: '',
   });
+
+  const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
+  const [docError, setDocError] = useState('');
+
+  const handleDocUpload = (docName: string) => {
+    setUploadedDocs(prev => ({ ...prev, [docName]: true }));
+    setDocError('');
+  };
+
+  const mandatoryDocsMissing = MANDATORY_DOCS.filter(d => !uploadedDocs[d]);
 
   if (submitted) {
     return (
@@ -192,16 +205,47 @@ export default function NewExportRecordPage() {
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900">Document Uploads</h2>
               <p className="text-sm text-gray-500">Upload required documents (PDF, JPG, PNG, DOCX, XLSX - max 10MB each)</p>
+
+              {docError && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {docError}
+                </div>
+              )}
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                <AlertCircle className="w-4 h-4 inline mr-1" />
+                <strong>Mandatory:</strong> DDP SPS Certificate and Pre-Shipment Inspection (PSI) Report must be uploaded before submission.
+              </div>
+
               <div className="space-y-3">
-                {DOC_TYPES.map(doc => (
-                  <div key={doc} className="flex items-center justify-between p-3 border rounded-lg">
-                    <span className="text-sm font-medium text-gray-700">{doc}</span>
-                    <label className="btn-outline text-xs cursor-pointer py-1 px-3">
-                      <Upload className="w-3 h-3 inline mr-1" /> Upload
-                      <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" />
-                    </label>
-                  </div>
-                ))}
+                {DOC_TYPES.map(doc => {
+                  const isMandatory = MANDATORY_DOCS.includes(doc);
+                  const isUploaded = uploadedDocs[doc];
+                  return (
+                    <div key={doc} className={`flex items-center justify-between p-3 border rounded-lg ${isUploaded ? 'border-green-300 bg-green-50' : isMandatory ? 'border-amber-300 bg-amber-50' : ''}`}>
+                      <div className="flex items-center gap-2">
+                        {isUploaded ? (
+                          <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                        ) : isMandatory ? (
+                          <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                        ) : null}
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">{doc}</span>
+                          {isMandatory && <span className="ml-2 text-xs font-bold text-red-600 uppercase">* Required</span>}
+                        </div>
+                      </div>
+                      {isUploaded ? (
+                        <span className="text-xs font-medium text-green-600">Uploaded</span>
+                      ) : (
+                        <label className="btn-outline text-xs cursor-pointer py-1 px-3">
+                          <Upload className="w-3 h-3 inline mr-1" /> Upload
+                          <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" onChange={() => handleDocUpload(doc)} />
+                        </label>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -213,7 +257,18 @@ export default function NewExportRecordPage() {
             {step < steps.length - 1 ? (
               <button onClick={() => setStep(step + 1)} className="btn-primary flex items-center gap-2">Next <ChevronRight className="w-4 h-4" /></button>
             ) : (
-              <button onClick={() => setSubmitted(true)} className="btn-primary">Submit Export Record</button>
+              <button
+                onClick={() => {
+                  if (mandatoryDocsMissing.length > 0) {
+                    setDocError(`Please upload the following mandatory documents: ${mandatoryDocsMissing.join(', ')}`);
+                    return;
+                  }
+                  setSubmitted(true);
+                }}
+                className="btn-primary"
+              >
+                Submit Export Record
+              </button>
             )}
           </div>
         </div>

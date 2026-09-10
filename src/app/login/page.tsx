@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth, isAdmin } from '@/lib/auth';
 import { Building2, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import Image from 'next/image';
 import { mockUsers } from '@/lib/mock-data';
 
 export default function LoginPage() {
@@ -44,8 +45,8 @@ export default function LoginPage() {
           <Link href="/" className="inline-flex items-center gap-2 text-white/80 hover:text-white text-sm mb-4">
             &larr; Back to Portal
           </Link>
-          <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4">
-            <Building2 className="w-9 h-9 text-gov-green-500" />
+          <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4 p-1">
+            <Image src="/govt-pakistan-logo.png" alt="Government of Pakistan" width={64} height={64} />
           </div>
           <h1 className="text-2xl font-bold text-white">Export Portal Login</h1>
           <p className="text-gov-green-100 text-sm mt-1">Government of Pakistan</p>

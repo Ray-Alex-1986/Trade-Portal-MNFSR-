@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Building2, Search, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
+import Image from 'next/image';
 import { mockComplaints } from '@/lib/mock-data';
 import { getStatusColor } from '@/lib/utils';
 
@@ -22,8 +23,8 @@ export default function TrackComplaintPage() {
       <header className="bg-gov-green-500 text-white py-4">
         <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <Building2 className="w-8 h-8" />
-            <div><p className="font-bold text-sm">Track Complaint</p><p className="text-xs text-gov-green-200">Export Portal</p></div>
+            <Image src="/govt-pakistan-logo.png" alt="Government of Pakistan" width={36} height={36} />
+            <div><p className="font-bold text-sm">Track Complaint</p><p className="text-xs text-gov-green-200">Government of Pakistan</p></div>
           </Link>
           <Link href="/complaints/submit" className="text-sm text-gov-green-100 hover:text-white">Submit Complaint</Link>
         </div>

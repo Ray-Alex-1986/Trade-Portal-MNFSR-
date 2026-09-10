@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { Building2, FileText, Shield, AlertTriangle, TrendingUp, Globe, Users, Package, BarChart3, Phone, Mail, ChevronRight, ExternalLink } from 'lucide-react';
 import { publicStats, monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
 import { formatNumber } from '@/lib/utils';
@@ -27,12 +28,10 @@ export default function HomePage() {
       <header className="bg-white border-b shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gov-green-500 rounded-full flex items-center justify-center">
-              <Building2 className="w-7 h-7 text-white" />
-            </div>
+            <Image src="/govt-pakistan-logo.png" alt="Government of Pakistan" width={48} height={48} />
             <div>
               <h1 className="text-lg font-bold text-gray-900 leading-tight">National Export Portal</h1>
-              <p className="text-xs text-gray-500">Registration, Certification & Complaint Management</p>
+              <p className="text-xs text-gray-500">Government of Pakistan | Registration, Certification & Complaint Management</p>
             </div>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm">
