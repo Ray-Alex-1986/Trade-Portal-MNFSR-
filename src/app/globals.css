@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+@theme {
+  --color-gov-green-50: #f0fdf4;
+  --color-gov-green-100: #dcfce7;
+  --color-gov-green-200: #bbf7d0;
+  --color-gov-green-300: #86efac;
+  --color-gov-green-400: #4ade80;
+  --color-gov-green-500: #006B3F;
+  --color-gov-green-600: #005a35;
+  --color-gov-green-700: #004a2c;
+  --color-gov-green-800: #003b23;
+  --color-gov-green-900: #002b1a;
+  --color-gov-gold-50: #fffbeb;
+  --color-gov-gold-100: #fef3c7;
+  --color-gov-gold-200: #fde68a;
+  --color-gov-gold-300: #fcd34d;
+  --color-gov-gold-400: #D4AF37;
+  --color-gov-gold-500: #b8941f;
+  --color-gov-gold-600: #92761a;
+  --color-gov-gold-700: #6c5814;
+  --color-gov-gold-800: #463a0e;
+  --color-gov-gold-900: #201c08;
+}
+
+@layer base {
+  body {
+    background-color: #f9fafb;
+    color: #111827;
+  }
+  .dark body {
+    background-color: #111827;
+    color: #f3f4f6;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    background-color: var(--color-gov-green-500);
+    color: white;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    transition: background-color 0.2s;
+  }
+  .btn-primary:hover {
+    background-color: var(--color-gov-green-600);
+  }
+  .btn-secondary {
+    background-color: var(--color-gov-gold-400);
+    color: #111827;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    transition: background-color 0.2s;
+  }
+  .btn-secondary:hover {
+    background-color: var(--color-gov-gold-500);
+  }
+  .btn-outline {
+    border: 2px solid var(--color-gov-green-500);
+    color: var(--color-gov-green-500);
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    transition: all 0.2s;
+  }
+  .btn-outline:hover {
+    background-color: var(--color-gov-green-500);
+    color: white;
+  }
+  .card {
+    background-color: white;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    border: 1px solid #e5e7eb;
+  }
+  .dark .card {
+    background-color: #1f2937;
+    border-color: #374151;
+  }
+  .input-field {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    background-color: white;
+    outline: none;
+    transition: all 0.2s;
+  }
+  .input-field:focus {
+    box-shadow: 0 0 0 2px var(--color-gov-green-500);
+    border-color: transparent;
+  }
+  .dark .input-field {
+    background-color: #1f2937;
+    border-color: #4b5563;
+    color: #f3f4f6;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+}

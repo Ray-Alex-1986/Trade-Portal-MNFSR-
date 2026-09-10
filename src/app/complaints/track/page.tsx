@@ -1,0 +1,111 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+import { Building2, Search, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
+import { mockComplaints } from '@/lib/mock-data';
+import { getStatusColor } from '@/lib/utils';
+
+export default function TrackComplaintPage() {
+  const [trackingNum, setTrackingNum] = useState('');
+  const [result, setResult] = useState<typeof mockComplaints[0] | null>(null);
+  const [searched, setSearched] = useState(false);
+
+  const handleSearch = () => {
+    const found = mockComplaints.find(c => c.tracking_number.toLowerCase() === trackingNum.toLowerCase());
+    setResult(found || null);
+    setSearched(true);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-gov-green-500 text-white py-4">
+        <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2">
+            <Building2 className="w-8 h-8" />
+            <div><p className="font-bold text-sm">Track Complaint</p><p className="text-xs text-gov-green-200">Export Portal</p></div>
+          </Link>
+          <Link href="/complaints/submit" className="text-sm text-gov-green-100 hover:text-white">Submit Complaint</Link>
+        </div>
+      </header>
+
+      <div className="max-w-2xl mx-auto px-4 py-12">
+        <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">Track Your Complaint</h1>
+        <p className="text-gray-500 text-center mb-8">Enter your complaint tracking number to check its status</p>
+
+        <div className="card p-6 mb-6">
+          <div className="flex gap-3">
+            <input
+              value={trackingNum}
+              onChange={e => setTrackingNum(e.target.value)}
+              placeholder="Enter tracking number (e.g., CMP-2025001)"
+              className="input-field flex-1"
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            />
+            <button onClick={handleSearch} className="btn-primary flex items-center gap-2">
+              <Search className="w-4 h-4" /> Track
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mt-2">Try: CMP-2025001 through CMP-2025020 for demo</p>
+        </div>
+
+        {searched && !result && (
+          <div className="card p-8 text-center text-gray-500">
+            <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-yellow-400" />
+            <p className="font-medium">No complaint found with this tracking number</p>
+            <p className="text-sm">Please verify the tracking number and try again.</p>
+          </div>
+        )}
+
+        {result && (
+          <div className="card p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">{result.tracking_number}</h2>
+              <span className={`badge text-sm ${getStatusColor(result.status)}`}>{result.status.replace(/_/g, ' ').toUpperCase()}</span>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4 text-sm">
+              <div><span className="text-gray-500">Category:</span> <span className="font-medium">{result.category}</span></div>
+              <div><span className="text-gray-500">Priority:</span> <span className={`badge ${getStatusColor(result.priority)}`}>{result.priority}</span></div>
+              <div><span className="text-gray-500">Subject:</span> <span className="font-medium">{result.subject}</span></div>
+              <div><span className="text-gray-500">Submitted:</span> <span>{new Date(result.created_at).toLocaleDateString()}</span></div>
+              <div><span className="text-gray-500">SLA Deadline:</span> <span>{new Date(result.sla_deadline).toLocaleDateString()}</span></div>
+              <div><span className="text-gray-500">Days Pending:</span> <span>{result.days_pending}</span></div>
+            </div>
+
+            {/* Timeline */}
+            <div>
+              <h3 className="font-semibold text-gray-900 mb-3">Status Timeline</h3>
+              <div className="space-y-3">
+                {[
+                  { label: 'Complaint Submitted', date: result.created_at, done: true },
+                  { label: 'Acknowledged', date: result.created_at, done: ['acknowledged','under_review','assigned','investigation','resolved','closed'].includes(result.status) },
+                  { label: 'Under Review', date: result.created_at, done: ['under_review','assigned','investigation','resolved','closed'].includes(result.status) },
+                  { label: 'Assigned to Officer', date: result.created_at, done: ['assigned','investigation','resolved','closed'].includes(result.status) },
+                  { label: 'Resolved', date: result.updated_at, done: ['resolved','closed'].includes(result.status) },
+                ].map((step, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center ${step.done ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'}`}>
+                      {step.done ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-3 h-3" />}
+                    </div>
+                    <div className="flex-1">
+                      <p className={`text-sm ${step.done ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>{step.label}</p>
+                    </div>
+                    {step.done && <span className="text-xs text-gray-500">{new Date(step.date).toLocaleDateString()}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {result.resolution_summary && (
+              <div className="p-4 bg-green-50 rounded-lg">
+                <h4 className="font-medium text-green-800 mb-1">Resolution Summary</h4>
+                <p className="text-sm text-green-700">{result.resolution_summary}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

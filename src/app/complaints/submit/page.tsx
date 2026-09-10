@@ -1,0 +1,145 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+import { Building2, CheckCircle, Upload } from 'lucide-react';
+import { COUNTRIES, COMPLAINT_CATEGORIES } from '@/lib/mock-data';
+import { generateId } from '@/lib/utils';
+
+export default function SubmitComplaintPage() {
+  const [submitted, setSubmitted] = useState(false);
+  const [trackingNumber] = useState(generateId('CMP'));
+  const [form, setForm] = useState({
+    complainant_type: 'Buyer', full_name: '', email: '', phone: '', company_name: '',
+    country: '', exporter_company: '', export_reg: '', export_record: '', product: '',
+    category: '', subject: '', description: '', incident_date: '', preferred_contact: 'Email',
+  });
+  const [consent, setConsent] = useState(false);
+
+  if (submitted) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-lg w-full text-center">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle className="w-10 h-10 text-green-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Complaint Submitted!</h2>
+          <p className="text-gray-500 mb-4">Your complaint has been registered and will be reviewed.</p>
+          <div className="card p-6 text-left space-y-3 mb-6">
+            <div className="flex justify-between"><span className="text-gray-500">Tracking Number:</span><span className="font-mono font-bold">{trackingNumber}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Category:</span><span>{form.category}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Status:</span><span className="badge bg-blue-100 text-blue-800">Submitted</span></div>
+          </div>
+          <div className="flex gap-3 justify-center">
+            <Link href="/complaints/track" className="btn-outline">Track Complaint</Link>
+            <Link href="/" className="btn-primary">Back to Portal</Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-gov-green-500 text-white py-4">
+        <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2">
+            <Building2 className="w-8 h-8" />
+            <div><p className="font-bold text-sm">Submit Complaint</p><p className="text-xs text-gov-green-200">Export Portal</p></div>
+          </Link>
+          <Link href="/complaints/track" className="text-sm text-gov-green-100 hover:text-white">Track Complaint</Link>
+        </div>
+      </header>
+
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Buyer/Importer Complaint Form</h1>
+        <p className="text-gray-500 mb-6">Submit a complaint regarding an export transaction. No portal account required.</p>
+
+        <div className="card p-6 md:p-8 space-y-6">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Complainant Type *</label>
+              <select value={form.complainant_type} onChange={e => setForm({ ...form, complainant_type: e.target.value })} className="input-field">
+                <option>Buyer</option><option>Importer</option><option>Exporter</option><option>Trade and Investment Counsellor</option><option>Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+              <input value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+              <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+              <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+              <input value={form.company_name} onChange={e => setForm({ ...form, company_name: e.target.value })} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Country *</label>
+              <select value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} className="input-field">
+                <option value="">Select</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Exporter Company Name</label>
+              <input value={form.exporter_company} onChange={e => setForm({ ...form, exporter_company: e.target.value })} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Export Record # (if available)</label>
+              <input value={form.export_record} onChange={e => setForm({ ...form, export_record: e.target.value })} className="input-field" placeholder="EXP-XXXXXXX" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Product/Item</label>
+              <input value={form.product} onChange={e => setForm({ ...form, product: e.target.value })} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Complaint Category *</label>
+              <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="input-field">
+                <option value="">Select</option>{COMPLAINT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
+              <input value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} className="input-field" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Detailed Description *</label>
+              <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="input-field" rows={4} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date of Incident</label>
+              <input type="date" value={form.incident_date} onChange={e => setForm({ ...form, incident_date: e.target.value })} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Contact Method</label>
+              <select value={form.preferred_contact} onChange={e => setForm({ ...form, preferred_contact: e.target.value })} className="input-field">
+                <option>Email</option><option>Phone</option><option>Both</option>
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Supporting Documents</label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gov-green-500 cursor-pointer">
+                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">Drag files here or click to upload (PDF, JPG, PNG, DOCX, XLSX)</p>
+              </div>
+            </div>
+          </div>
+
+          <label className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg cursor-pointer">
+            <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1 rounded" />
+            <span className="text-sm text-gray-700">I declare that the information provided is true and accurate to the best of my knowledge. I understand that filing a false complaint may result in legal consequences.</span>
+          </label>
+
+          <button onClick={() => setSubmitted(true)} disabled={!consent} className="btn-primary w-full py-3 disabled:opacity-50">
+            Submit Complaint
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
