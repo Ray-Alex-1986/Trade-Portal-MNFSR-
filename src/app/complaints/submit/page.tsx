@@ -5,17 +5,53 @@ import Link from 'next/link';
 import { CheckCircle, Upload } from 'lucide-react';
 import Image from 'next/image';
 import { COUNTRIES, COMPLAINT_CATEGORIES } from '@/lib/mock-data';
+import { useDataStore } from '@/lib/data-store';
 import { generateId } from '@/lib/utils';
 
 export default function SubmitComplaintPage() {
+  const { addComplaint, masterItems } = useDataStore();
   const [submitted, setSubmitted] = useState(false);
   const [trackingNumber] = useState(generateId('CMP'));
+  const [error, setError] = useState('');
   const [form, setForm] = useState({
     complainant_type: 'Buyer', full_name: '', email: '', phone: '', company_name: '',
     country: '', exporter_company: '', export_reg: '', export_record: '', product: '',
     category: '', subject: '', description: '', incident_date: '', preferred_contact: 'Email',
   });
   const [consent, setConsent] = useState(false);
+  const countries = masterItems.countries?.length ? masterItems.countries : COUNTRIES;
+  const categories = masterItems.complaint_categories?.length ? masterItems.complaint_categories : COMPLAINT_CATEGORIES;
+
+  const handleSubmit = () => {
+    if (!form.full_name.trim() || !form.email.trim() || !form.phone.trim() || !form.country || !form.category || !form.subject.trim() || !form.description.trim()) {
+      setError('Please fill in all required fields (name, email, phone, country, category, subject, and description).');
+      return;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    setError('');
+    addComplaint({
+      tracking_number: trackingNumber,
+      complainant_type: form.complainant_type,
+      full_name: form.full_name.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      company_name: form.company_name || undefined,
+      country: form.country,
+      exporter_company: form.exporter_company || undefined,
+      export_registration_number: form.export_reg || undefined,
+      export_record_number: form.export_record || undefined,
+      product: form.product || undefined,
+      category: form.category,
+      subject: form.subject.trim(),
+      description: form.description.trim(),
+      incident_date: form.incident_date || '',
+      preferred_contact: form.preferred_contact,
+    });
+    setSubmitted(true);
+  };
 
   if (submitted) {
     return (
@@ -57,6 +93,9 @@ export default function SubmitComplaintPage() {
         <p className="text-gray-500 mb-6">Submit a complaint regarding an export transaction. No portal account required.</p>
 
         <div className="card p-6 md:p-8 space-y-6">
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>
+          )}
           <div className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Complainant Type *</label>
@@ -83,7 +122,7 @@ export default function SubmitComplaintPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Country *</label>
               <select value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} className="input-field">
-                <option value="">Select</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}
+                <option value="">Select</option>{countries.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -101,7 +140,7 @@ export default function SubmitComplaintPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Complaint Category *</label>
               <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="input-field">
-                <option value="">Select</option>{COMPLAINT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                <option value="">Select</option>{categories.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div className="md:col-span-2">
@@ -136,7 +175,7 @@ export default function SubmitComplaintPage() {
             <span className="text-sm text-gray-700">I declare that the information provided is true and accurate to the best of my knowledge. I understand that filing a false complaint may result in legal consequences.</span>
           </label>
 
-          <button onClick={() => setSubmitted(true)} disabled={!consent} className="btn-primary w-full py-3 disabled:opacity-50">
+          <button onClick={handleSubmit} disabled={!consent} className="btn-primary w-full py-3 disabled:opacity-50">
             Submit Complaint
           </button>
         </div>

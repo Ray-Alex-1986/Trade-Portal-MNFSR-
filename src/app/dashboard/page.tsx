@@ -2,7 +2,8 @@
 
 import { useAuth } from '@/lib/auth';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { mockExportRecords, mockComplaints, monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
+import { useDataStore } from '@/lib/data-store';
+import { monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
 import { formatNumber, formatCurrency, getStatusColor } from '@/lib/utils';
 import { Package, FileCheck, AlertTriangle, Clock, CheckCircle, XCircle, TrendingUp, Globe, BarChart3, FileText } from 'lucide-react';
 import Link from 'next/link';
@@ -12,19 +13,20 @@ const COLORS = ['#006B3F', '#D4AF37', '#0ea5e9', '#8b5cf6', '#ef4444', '#f97316'
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { exportRecords, complaints } = useDataStore();
 
-  const myRecords = mockExportRecords.filter(r => r.exporter_id === user?.id || r.exporter_id === 'u8');
-  const myComplaints = mockComplaints.filter(c => c.status !== 'closed').slice(0, 5);
+  const myRecords = exportRecords.filter(r => r.exporter_id === user?.id || r.exporter_id === 'u8');
+  const myComplaints = complaints.filter(c => c.status !== 'closed').slice(0, 5);
 
   const stats = {
     total: myRecords.length,
     drafts: myRecords.filter(r => r.status === 'draft').length,
-    pending: myRecords.filter(r => ['submitted', 'under_tdap_review', 'under_nafsa_review'].includes(r.status)).length,
+    pending: myRecords.filter(r => ['submitted', 'under_tdap_review', 'under_nafsa_review', 'additional_info_required'].includes(r.status)).length,
     approved: myRecords.filter(r => r.status === 'approved').length,
     rejected: myRecords.filter(r => r.status === 'rejected').length,
     shipped: myRecords.filter(r => ['shipped', 'ready_for_shipment'].includes(r.status)).length,
     completed: myRecords.filter(r => ['delivered', 'closed'].includes(r.status)).length,
-    complaints: mockComplaints.length,
+    complaints: complaints.length,
   };
 
   const statusDistribution = [

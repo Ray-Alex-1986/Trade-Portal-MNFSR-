@@ -2,55 +2,72 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { mockCompanies, mockExportRecords, mockComplaints, mockUsers, monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
+import { useDataStore } from '@/lib/data-store';
+import { monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
 import { formatNumber, getStatusColor } from '@/lib/utils';
-import { Users, Package, FileCheck, AlertTriangle, TrendingUp, Globe, Clock, CheckCircle, XCircle, BarChart3, Shield } from 'lucide-react';
+import { Users, Package, FileCheck, AlertTriangle, TrendingUp, Globe, Clock, CheckCircle, XCircle, BarChart3, Shield, RotateCcw } from 'lucide-react';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const COLORS = ['#006B3F', '#D4AF37', '#0ea5e9', '#8b5cf6', '#ef4444', '#f97316', '#06b6d4', '#84cc16', '#ec4899', '#14b8a6'];
 
 export default function AdminDashboardPage() {
   const [period, setPeriod] = useState('12m');
+  const { companies, exportRecords, complaints, users, resetData } = useDataStore();
+
+  const pendingRegistrations = companies.filter(c => ['submitted', 'under_tdap_review', 'under_nafsa_review'].includes(c.status));
+  const pendingExports = exportRecords.filter(r => ['submitted', 'under_tdap_review', 'under_nafsa_review'].includes(r.status));
+  const openComplaints = complaints.filter(c => !['resolved', 'closed'].includes(c.status));
+  const resolvedComplaints = complaints.filter(c => ['resolved', 'closed'].includes(c.status));
+
+  // Live aggregates — every KPI reconciles with the review queues, data pages, and the assistant chatbot
+  const FX_TO_USD: Record<string, number> = { USD: 1, PKR: 1 / 278, EUR: 1.08, GBP: 1.27 };
+  const totalExportValueUSD = exportRecords.reduce((sum, r) => sum + r.estimated_value * (FX_TO_USD[r.currency] ?? 1), 0);
+  const exportValueLabel = totalExportValueUSD >= 1_000_000
+    ? `$${(totalExportValueUSD / 1e6).toFixed(2)}M`
+    : `$${Math.round(totalExportValueUSD / 1000)}K`;
+  const countriesServed = new Set(exportRecords.map(r => r.destination_country)).size;
 
   const kpis = [
-    { label: 'Registered Companies', value: mockCompanies.length + 2817, icon: Users, color: 'text-blue-600 bg-blue-50', trend: '+12%' },
-    { label: 'Verified Exporters', value: mockCompanies.filter(c => c.status === 'approved').length + 2650, icon: CheckCircle, color: 'text-green-600 bg-green-50', trend: '+8%' },
-    { label: 'Pending Registrations', value: mockCompanies.filter(c => ['submitted', 'under_tdap_review', 'under_nafsa_review'].includes(c.status)).length + 143, icon: Clock, color: 'text-yellow-600 bg-yellow-50', trend: '-5%' },
-    { label: 'Active Users', value: mockUsers.filter(u => u.is_active).length + 2146, icon: Users, color: 'text-indigo-600 bg-indigo-50', trend: '+15%' },
-    { label: 'Total Export Records', value: mockExportRecords.length + 15174, icon: Package, color: 'text-purple-600 bg-purple-50', trend: '+22%' },
-    { label: 'Approved Consignments', value: mockExportRecords.filter(r => r.status === 'approved').length + 12450, icon: FileCheck, color: 'text-green-600 bg-green-50', trend: '+18%' },
-    { label: 'Pending Certifications', value: 143, icon: Shield, color: 'text-orange-600 bg-orange-50', trend: '-3%' },
-    { label: 'Est. Export Value (USD)', value: '45.2M', icon: TrendingUp, color: 'text-green-600 bg-green-50', trend: '+28%' },
-    { label: 'Total Complaints', value: mockComplaints.length + 872, icon: AlertTriangle, color: 'text-red-600 bg-red-50', trend: '+4%' },
-    { label: 'Open Complaints', value: mockComplaints.filter(c => !['resolved', 'closed'].includes(c.status)).length + 136, icon: AlertTriangle, color: 'text-orange-600 bg-orange-50', trend: '-8%' },
-    { label: 'Resolved Complaints', value: mockComplaints.filter(c => ['resolved', 'closed'].includes(c.status)).length + 756, icon: CheckCircle, color: 'text-green-600 bg-green-50', trend: '+12%' },
+    { label: 'Registered Companies', value: companies.length, icon: Users, color: 'text-blue-600 bg-blue-50', trend: '+12%' },
+    { label: 'Verified Exporters', value: companies.filter(c => c.status === 'approved').length, icon: CheckCircle, color: 'text-green-600 bg-green-50', trend: '+8%' },
+    { label: 'Pending Registrations', value: pendingRegistrations.length, icon: Clock, color: 'text-yellow-600 bg-yellow-50', trend: '-5%' },
+    { label: 'Active Users', value: users.filter(u => u.is_active).length, icon: Users, color: 'text-indigo-600 bg-indigo-50', trend: '+15%' },
+    { label: 'Total Export Records', value: exportRecords.length, icon: Package, color: 'text-purple-600 bg-purple-50', trend: '+22%' },
+    { label: 'Approved Consignments', value: exportRecords.filter(r => r.status === 'approved').length, icon: FileCheck, color: 'text-green-600 bg-green-50', trend: '+18%' },
+    { label: 'Pending Certifications', value: pendingExports.length, icon: Shield, color: 'text-orange-600 bg-orange-50', trend: '-3%' },
+    { label: 'Est. Export Value (USD)', value: exportValueLabel, icon: TrendingUp, color: 'text-green-600 bg-green-50', trend: '+28%' },
+    { label: 'Total Complaints', value: complaints.length, icon: AlertTriangle, color: 'text-red-600 bg-red-50', trend: '+4%' },
+    { label: 'Open Complaints', value: openComplaints.length, icon: AlertTriangle, color: 'text-orange-600 bg-orange-50', trend: '-8%' },
+    { label: 'Resolved Complaints', value: resolvedComplaints.length, icon: CheckCircle, color: 'text-green-600 bg-green-50', trend: '+12%' },
     { label: 'Avg Resolution (days)', value: '14.2', icon: Clock, color: 'text-blue-600 bg-blue-50', trend: '-15%' },
     { label: 'SPS Compliance Rate', value: '94.2%', icon: Shield, color: 'text-green-600 bg-green-50', trend: '+2%' },
-    { label: 'Countries Served', value: 87, icon: Globe, color: 'text-cyan-600 bg-cyan-50', trend: '+5' },
+    { label: 'Countries Served', value: countriesServed, icon: Globe, color: 'text-cyan-600 bg-cyan-50', trend: '+5' },
     { label: 'SLA Compliance', value: '88.5%', icon: BarChart3, color: 'text-purple-600 bg-purple-50', trend: '+3%' },
     { label: 'PSI Compliance Rate', value: '91.8%', icon: FileCheck, color: 'text-green-600 bg-green-50', trend: '+1%' },
   ];
 
   const verificationStatusData = [
-    { name: 'Verified', value: 2650 },
-    { name: 'Pending', value: 143 },
-    { name: 'Rejected', value: 28 },
-    { name: 'Additional Info', value: 26 },
+    { name: 'Verified', value: companies.filter(c => c.status === 'approved').length },
+    { name: 'Pending', value: pendingRegistrations.length },
+    { name: 'Rejected', value: companies.filter(c => c.status === 'rejected').length },
+    { name: 'Additional Info', value: companies.filter(c => c.status === 'additional_info_required').length },
   ];
 
   const consignmentStatusData = [
-    { name: 'Approved', value: 12450 },
-    { name: 'Under Review', value: 1200 },
-    { name: 'Shipped', value: 890 },
-    { name: 'Delivered', value: 544 },
-    { name: 'Rejected', value: 150 },
+    { name: 'Approved', value: exportRecords.filter(r => r.status === 'approved').length },
+    { name: 'Under Review', value: pendingExports.length },
+    { name: 'Ready for Shipment', value: exportRecords.filter(r => r.status === 'ready_for_shipment').length },
+    { name: 'Shipped', value: exportRecords.filter(r => r.status === 'shipped').length },
+    { name: 'Delivered', value: exportRecords.filter(r => r.status === 'delivered').length },
+    { name: 'Rejected', value: exportRecords.filter(r => r.status === 'rejected').length },
   ];
 
-  const complaintsByCategory = [
-    { name: 'Quality', value: 245 }, { name: 'SPS', value: 180 }, { name: 'Quantity', value: 120 },
-    { name: 'Packaging', value: 95 }, { name: 'Documentation', value: 88 }, { name: 'Delay', value: 75 },
-    { name: 'Payment', value: 52 }, { name: 'Other', value: 37 },
-  ];
+  const complaintsByCategory = Object.entries(
+    complaints.reduce<Record<string, number>>((acc, c) => {
+      acc[c.category] = (acc[c.category] ?? 0) + 1;
+      return acc;
+    }, {})
+  ).map(([name, value]) => ({ name, value }));
 
   const complaintTrend = [
     { month: 'Sep 25', received: 65, resolved: 58 }, { month: 'Oct 25', received: 72, resolved: 65 },
@@ -70,6 +87,9 @@ export default function AdminDashboardPage() {
             <p className="text-gray-500">National Export Monitoring & Management Overview</p>
           </div>
           <div className="flex gap-3 items-center">
+            <button onClick={() => { if (window.confirm('Reset all demo data to its initial state? This clears any changes you have made.')) resetData(); }} className="btn-outline flex items-center gap-2 text-sm" title="Restore the demo dataset">
+              <RotateCcw className="w-4 h-4" /> Reset Demo Data
+            </button>
             <select value={period} onChange={e => setPeriod(e.target.value)} className="input-field w-40">
               <option value="1m">Last Month</option>
               <option value="3m">Last 3 Months</option>

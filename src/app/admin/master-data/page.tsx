@@ -2,82 +2,77 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { PRODUCTS, COUNTRIES, PROVINCES, PORTS, HS_CODES } from '@/lib/mock-data';
-import { Plus, Edit, Trash2, Database, X, Save, CheckCircle } from 'lucide-react';
+import { HS_CODES } from '@/lib/mock-data';
+import { useDataStore, MasterCategory } from '@/lib/data-store';
+import { Plus, Edit, Trash2, Database, X, Save, CheckCircle, AlertTriangle } from 'lucide-react';
 
-type DataCategory = 'products' | 'countries' | 'provinces' | 'ports' | 'complaint_categories' | 'document_types' | 'roles' | 'institutions';
-
-const initialCategoryData: Record<DataCategory, { label: string; items: string[] }> = {
-  products: { label: 'Products & Commodities', items: [...PRODUCTS] },
-  countries: { label: 'Countries', items: [...COUNTRIES] },
-  provinces: { label: 'Provinces', items: [...PROVINCES] },
-  ports: { label: 'Ports', items: [...PORTS] },
-  complaint_categories: { label: 'Complaint Categories', items: ['Product quality issue', 'SPS compliance issue', 'Quantity discrepancy', 'Packaging issue', 'Documentation issue', 'Shipment delay', 'Payment dispute', 'Misrepresentation', 'Exporter conduct', 'Buyer/importer conduct', 'Inspection issue', 'Regulatory issue', 'Other'] },
-  document_types: { label: 'Document Types', items: ["Buyer's Quality Requirement Sheet", "DDP SPS Certificate", "Pre-Shipment Inspection (PSI) Report", "Purchase Order / Export Contract", "Commercial Invoice", "Packing List", "Certificate of Origin", "Phytosanitary Certificate", "Laboratory Test Report", "Bill of Lading / Airway Bill", "Additional Supporting Documents"] },
-  roles: { label: 'User Roles', items: ['MNFSR Super Admin', 'MoC Admin', 'TDAP Admin', 'TDAP Officer', 'NAFSA Admin', 'NAFSA Officer', 'Trade & Investment Counsellor', 'Exporter/Trader', 'Buyer/Importer', 'Auditor/Viewer'] },
-  institutions: { label: 'Institutions', items: ['MNFSR', 'Ministry of Commerce', 'TDAP', 'NAFSA', 'TIC Beijing', 'TIC Dubai', 'TIC Riyadh', 'TIC London', 'TIC Kuala Lumpur'] },
+const categoryLabels: Record<MasterCategory, string> = {
+  products: 'Products & Commodities',
+  countries: 'Countries',
+  provinces: 'Provinces',
+  ports: 'Ports',
+  complaint_categories: 'Complaint Categories',
+  document_types: 'Document Types',
+  roles: 'User Roles',
+  institutions: 'Institutions',
 };
 
 export default function MasterDataPage() {
-  const [category, setCategory] = useState<DataCategory>('products');
-  const [catData, setCatData] = useState(initialCategoryData);
+  const { masterItems, addMasterItem, updateMasterItem, deleteMasterItem } = useDataStore();
+  const [category, setCategory] = useState<MasterCategory>('products');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [newItem, setNewItem] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+  const items = masterItems[category] || [];
+
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
   const handleAdd = () => {
     if (!newItem.trim()) return;
-    setCatData(prev => ({
-      ...prev,
-      [category]: { ...prev[category], items: [...prev[category].items, newItem.trim()] }
-    }));
-    showToast(`"${newItem.trim()}" added to ${catData[category].label}`);
+    if (items.some(i => i.toLowerCase() === newItem.trim().toLowerCase())) {
+      showToast('This item already exists in the category.', 'error');
+      return;
+    }
+    addMasterItem(category, newItem.trim());
+    showToast(`"${newItem.trim()}" added to ${categoryLabels[category]}`);
     setNewItem('');
     setShowAdd(false);
   };
 
   const handleEditStart = (index: number) => {
     setEditingIndex(index);
-    setEditValue(catData[category].items[index]);
+    setEditValue(items[index]);
   };
 
   const handleEditSave = () => {
     if (editingIndex === null || !editValue.trim()) return;
-    setCatData(prev => ({
-      ...prev,
-      [category]: {
-        ...prev[category],
-        items: prev[category].items.map((item, i) => i === editingIndex ? editValue.trim() : item)
-      }
-    }));
+    if (items.some((i, idx) => idx !== editingIndex && i.toLowerCase() === editValue.trim().toLowerCase())) {
+      showToast('Another item in this category already has this name.', 'error');
+      return;
+    }
+    updateMasterItem(category, editingIndex, editValue.trim());
     showToast(`Item updated to "${editValue.trim()}"`);
     setEditingIndex(null);
     setEditValue('');
   };
 
   const handleDelete = (index: number) => {
-    const item = catData[category].items[index];
-    setCatData(prev => ({
-      ...prev,
-      [category]: {
-        ...prev[category],
-        items: prev[category].items.filter((_, i) => i !== index)
-      }
-    }));
-    showToast(`"${item}" deleted from ${catData[category].label}`);
+    const item = items[index];
+    deleteMasterItem(category, index);
+    showToast(`"${item}" deleted from ${categoryLabels[category]}`);
     setDeleteConfirm(null);
   };
 
   return (
     <DashboardLayout>
       {toast && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg animate-pulse">
-          <CheckCircle className="w-4 h-4" /> {toast}
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg max-w-md ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'} text-white`}>
+          {toast.type === 'error' ? <AlertTriangle className="w-4 h-4 flex-shrink-0" /> : <CheckCircle className="w-4 h-4 flex-shrink-0" />}
+          <span className="text-sm">{toast.msg}</span>
         </div>
       )}
 
@@ -89,7 +84,7 @@ export default function MasterDataPage() {
               <Trash2 className="w-6 h-6 text-red-600" />
             </div>
             <h3 className="text-lg font-bold text-gray-900 mb-2">Delete Item?</h3>
-            <p className="text-gray-500 text-sm mb-6">Remove <strong>&quot;{catData[category].items[deleteConfirm]}&quot;</strong> from {catData[category].label}?</p>
+            <p className="text-gray-500 text-sm mb-6">Remove <strong>&quot;{items[deleteConfirm]}&quot;</strong> from {categoryLabels[category]}?</p>
             <div className="flex gap-3">
               <button onClick={() => handleDelete(deleteConfirm)} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex-1">Delete</button>
               <button onClick={() => setDeleteConfirm(null)} className="btn-outline flex-1">Cancel</button>
@@ -119,14 +114,14 @@ export default function MasterDataPage() {
                 </h3>
               </div>
               <div className="divide-y">
-                {(Object.entries(catData) as [DataCategory, { label: string; items: string[] }][]).map(([key, val]) => (
+                {(Object.entries(categoryLabels) as [MasterCategory, string][]).map(([key, label]) => (
                   <button
                     key={key}
                     onClick={() => { setCategory(key); setEditingIndex(null); setShowAdd(false); }}
                     className={`w-full text-left p-3 text-sm hover:bg-gray-50 transition-colors ${category === key ? 'bg-gov-green-50 text-gov-green-700 font-medium border-l-4 border-gov-green-500' : 'text-gray-700'}`}
                   >
-                    <p>{val.label}</p>
-                    <p className="text-xs text-gray-400">{val.items.length} items</p>
+                    <p>{label}</p>
+                    <p className="text-xs text-gray-400">{(masterItems[key] || []).length} items</p>
                   </button>
                 ))}
               </div>
@@ -137,8 +132,8 @@ export default function MasterDataPage() {
           <div className="lg:col-span-3">
             <div className="card">
               <div className="p-4 border-b flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900">{catData[category].label}</h3>
-                <span className="badge bg-gray-100 text-gray-700">{catData[category].items.length} items</span>
+                <h3 className="font-semibold text-gray-900">{categoryLabels[category]}</h3>
+                <span className="badge bg-gray-100 text-gray-700">{items.length} items</span>
               </div>
 
               {showAdd && (
@@ -150,7 +145,7 @@ export default function MasterDataPage() {
               )}
 
               <div className="divide-y">
-                {catData[category].items.map((item, i) => (
+                {items.map((item, i) => (
                   <div key={i} className="p-3 flex items-center justify-between hover:bg-gray-50">
                     {editingIndex === i ? (
                       <div className="flex items-center gap-2 flex-1">
@@ -170,7 +165,7 @@ export default function MasterDataPage() {
                   </div>
                 ))}
               </div>
-              {catData[category].items.length === 0 && (
+              {items.length === 0 && (
                 <div className="p-8 text-center text-gray-400">No items in this category. Click &quot;Add Item&quot; to add one.</div>
               )}
             </div>

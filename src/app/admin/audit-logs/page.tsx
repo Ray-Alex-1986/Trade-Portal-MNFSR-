@@ -2,16 +2,17 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { mockAuditLogs } from '@/lib/mock-data';
+import { useDataStore } from '@/lib/data-store';
 import { Search, Filter, Download } from 'lucide-react';
 
 export default function AuditLogsPage() {
+  const { auditLogs } = useDataStore();
   const [search, setSearch] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
 
-  const modules = [...new Set(mockAuditLogs.map(l => l.module))];
+  const modules = [...new Set(auditLogs.map(l => l.module))];
 
-  const filtered = mockAuditLogs.filter(l => {
+  const filtered = auditLogs.filter(l => {
     const matchSearch = !search || l.user_name.toLowerCase().includes(search.toLowerCase()) || l.action.toLowerCase().includes(search.toLowerCase()) || l.record_id.toLowerCase().includes(search.toLowerCase());
     const matchModule = !moduleFilter || l.module === moduleFilter;
     return matchSearch && matchModule;

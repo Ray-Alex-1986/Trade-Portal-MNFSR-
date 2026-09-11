@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/lib/auth';
+import { DataProvider } from '@/lib/data-store';
 import { MockDataProvider } from '@/lib/supabase/use-mock';
+import ShipChatBot from '@/components/ShipChatBot';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -17,7 +19,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         <MockDataProvider>
           <AuthProvider>
-            {children}
+            <DataProvider>
+              {children}
+              <ShipChatBot />
+            </DataProvider>
           </AuthProvider>
         </MockDataProvider>
       </body>

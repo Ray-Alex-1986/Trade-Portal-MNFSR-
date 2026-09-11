@@ -1,14 +1,13 @@
 'use client';
 
-import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { mockNotifications } from '@/lib/mock-data';
+import { useDataStore } from '@/lib/data-store';
 import { Bell, CheckCircle, Info, AlertTriangle, XCircle, Check } from 'lucide-react';
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const { notifications, markAllNotificationsRead } = useDataStore();
 
-  const markAllRead = () => setNotifications(notifications.map(n => ({ ...n, is_read: true })));
+  const markAllRead = () => markAllNotificationsRead();
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
   const getIcon = (type: string) => {
@@ -20,14 +19,7 @@ export default function NotificationsPage() {
     }
   };
 
-  const allNotifications = [
-    ...notifications,
-    { id: 'n6', user_id: 'u1', title: 'New Export Record', message: 'EXP-2025060 submitted by Pak Rice Exports.', type: 'info' as const, is_read: true, link: '/admin/reviews', created_at: '2026-09-07T10:00:00Z' },
-    { id: 'n7', user_id: 'u1', title: 'SLA Warning', message: 'Complaint CMP-2025012 approaching SLA deadline.', type: 'warning' as const, is_read: true, link: '/admin/reviews', created_at: '2026-09-06T14:30:00Z' },
-    { id: 'n8', user_id: 'u1', title: 'User Registered', message: 'New exporter registration: Heritage Rice Mills.', type: 'info' as const, is_read: true, link: '/admin/users', created_at: '2026-09-05T09:15:00Z' },
-    { id: 'n9', user_id: 'u1', title: 'Report Generated', message: 'August 2026 monthly export summary ready.', type: 'success' as const, is_read: true, link: '/admin/reports', created_at: '2026-09-01T08:00:00Z' },
-    { id: 'n10', user_id: 'u1', title: 'System Update', message: 'Portal maintenance scheduled for Sep 15.', type: 'info' as const, is_read: true, link: undefined, created_at: '2026-08-30T12:00:00Z' },
-  ];
+  const allNotifications = [...notifications];
 
   return (
     <DashboardLayout>

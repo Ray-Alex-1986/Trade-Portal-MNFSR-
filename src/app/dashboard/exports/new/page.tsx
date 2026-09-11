@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useRouter } from 'next/navigation';
-import { PRODUCTS, COUNTRIES, PROVINCES, DISTRICTS, PORTS, HS_CODES } from '@/lib/mock-data';
+import { HS_CODES } from '@/lib/mock-data';
+import { useDataStore } from '@/lib/data-store';
 import { ChevronRight, ChevronLeft, CheckCircle, Upload, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 
@@ -22,8 +23,17 @@ const MANDATORY_DOCS = ["DDP SPS Certificate", "Pre-Shipment Inspection (PSI) Re
 export default function NewExportRecordPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { companies, masterItems, addExportRecord } = useDataStore();
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [createdNumber, setCreatedNumber] = useState('');
+
+  const products = masterItems.products || [];
+  const countries = masterItems.countries || [];
+  const provinces = masterItems.provinces || [];
+  const ports = masterItems.ports || [];
+
+  const myCompany = companies.find(c => c.owner_id === user?.id) || companies.find(c => c.owner_id === 'u8');
 
   const [item, setItem] = useState({
     product: '', category: '', hs_code: '', description: '', quantity: 0, unit: 'Metric Tons',
@@ -58,7 +68,7 @@ export default function NewExportRecordPage() {
             <CheckCircle className="w-10 h-10 text-green-600" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Export Record Submitted!</h2>
-          <p className="text-gray-500 mb-4">Consignment #EXP-2025061 has been submitted for review.</p>
+          <p className="text-gray-500 mb-4">Consignment <span className="font-mono font-bold text-gov-green-600">{createdNumber}</span> has been submitted for review.</p>
           <div className="flex gap-3 justify-center">
             <button className="btn-outline" onClick={() => router.push('/dashboard/exports')}>View Records</button>
             <button className="btn-primary" onClick={() => { setSubmitted(false); setStep(0); }}>Create Another</button>
@@ -93,9 +103,9 @@ export default function NewExportRecordPage() {
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900">Exporter Information (Auto-populated)</h2>
               <div className="grid md:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-500 mb-1">Registration Number</label><p className="input-field bg-gray-50">REG-2024008</p></div>
-                <div><label className="block text-sm font-medium text-gray-500 mb-1">Company Name</label><p className="input-field bg-gray-50">Pak Rice Exports (Pvt) Ltd</p></div>
-                <div><label className="block text-sm font-medium text-gray-500 mb-1">NTN</label><p className="input-field bg-gray-50">1234567-1</p></div>
+                <div><label className="block text-sm font-medium text-gray-500 mb-1">Registration Number</label><p className="input-field bg-gray-50">{myCompany?.registration_number || 'REG-2024008'}</p></div>
+                <div><label className="block text-sm font-medium text-gray-500 mb-1">Company Name</label><p className="input-field bg-gray-50">{myCompany?.legal_name || 'Pak Rice Exports (Pvt) Ltd'}</p></div>
+                <div><label className="block text-sm font-medium text-gray-500 mb-1">NTN</label><p className="input-field bg-gray-50">{myCompany?.ntn || '1234567-1'}</p></div>
                 <div><label className="block text-sm font-medium text-gray-500 mb-1">Authorized Representative</label><p className="input-field bg-gray-50">{user?.full_name || 'Hassan Ali Shah'}</p></div>
               </div>
             </div>
@@ -109,7 +119,7 @@ export default function NewExportRecordPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Product *</label>
                   <select value={item.product} onChange={e => setItem({ ...item, product: e.target.value, hs_code: HS_CODES[e.target.value] || '' })} className="input-field">
                     <option value="">Select Product</option>
-                    {PRODUCTS.map(p => <option key={p}>{p}</option>)}
+                    {products.map(p => <option key={p}>{p}</option>)}
                   </select>
                 </div>
                 <div>
@@ -143,7 +153,7 @@ export default function NewExportRecordPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Province of Production</label>
                   <select value={item.province} onChange={e => setItem({ ...item, province: e.target.value })} className="input-field">
-                    {PROVINCES.map(p => <option key={p}>{p}</option>)}
+                    {provinces.map(p => <option key={p}>{p}</option>)}
                   </select>
                 </div>
                 <div>
@@ -174,7 +184,7 @@ export default function NewExportRecordPage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Buyer Name *</label><input value={buyer.name} onChange={e => setBuyer({ ...buyer, name: e.target.value })} className="input-field" /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label><input value={buyer.company} onChange={e => setBuyer({ ...buyer, company: e.target.value })} className="input-field" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Country *</label><select value={buyer.country} onChange={e => setBuyer({ ...buyer, country: e.target.value })} className="input-field"><option value="">Select</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Country *</label><select value={buyer.country} onChange={e => setBuyer({ ...buyer, country: e.target.value })} className="input-field"><option value="">Select</option>{countries.map(c => <option key={c}>{c}</option>)}</select></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Contact Person *</label><input value={buyer.contact} onChange={e => setBuyer({ ...buyer, contact: e.target.value })} className="input-field" /></div>
                 <div className="md:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">Address *</label><input value={buyer.address} onChange={e => setBuyer({ ...buyer, address: e.target.value })} className="input-field" /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Email *</label><input type="email" value={buyer.email} onChange={e => setBuyer({ ...buyer, email: e.target.value })} className="input-field" /></div>
@@ -188,9 +198,9 @@ export default function NewExportRecordPage() {
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900">Shipment Information</h2>
               <div className="grid md:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Destination Country *</label><select value={shipment.dest_country} onChange={e => setShipment({ ...shipment, dest_country: e.target.value })} className="input-field"><option value="">Select</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Destination Country *</label><select value={shipment.dest_country} onChange={e => setShipment({ ...shipment, dest_country: e.target.value })} className="input-field"><option value="">Select</option>{countries.map(c => <option key={c}>{c}</option>)}</select></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Destination Port *</label><input value={shipment.dest_port} onChange={e => setShipment({ ...shipment, dest_port: e.target.value })} className="input-field" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Port of Departure</label><select value={shipment.departure_port} onChange={e => setShipment({ ...shipment, departure_port: e.target.value })} className="input-field">{PORTS.map(p => <option key={p}>{p}</option>)}</select></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Port of Departure</label><select value={shipment.departure_port} onChange={e => setShipment({ ...shipment, departure_port: e.target.value })} className="input-field">{ports.map(p => <option key={p}>{p}</option>)}</select></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Mode of Transport</label><select value={shipment.transport_mode} onChange={e => setShipment({ ...shipment, transport_mode: e.target.value })} className="input-field"><option>Sea</option><option>Air</option><option>Road</option><option>Rail</option></select></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Shipping Company</label><input value={shipment.shipping_company} onChange={e => setShipment({ ...shipment, shipping_company: e.target.value })} className="input-field" /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Container Number</label><input value={shipment.container} onChange={e => setShipment({ ...shipment, container: e.target.value })} className="input-field" /></div>
@@ -263,6 +273,77 @@ export default function NewExportRecordPage() {
                     setDocError(`Please upload the following mandatory documents: ${mandatoryDocsMissing.join(', ')}`);
                     return;
                   }
+                  if (!item.product || !item.description || !item.quantity || !item.value) {
+                    setStep(1);
+                    setDocError('Please complete the required item information (product, description, quantity, value) before submitting.');
+                    return;
+                  }
+                  if (!buyer.name || !buyer.company || !buyer.country) {
+                    setStep(2);
+                    setDocError('Please complete the required buyer information before submitting.');
+                    return;
+                  }
+                  if (!shipment.dest_country) {
+                    setStep(3);
+                    setDocError('Please select a destination country before submitting.');
+                    return;
+                  }
+                  const productCategory = item.product.includes('Rice') ? 'Cereals'
+                    : (item.product.includes('Mango') || item.product.includes('Citrus') || item.product.includes('Kinnow')) ? 'Fruits'
+                    : (item.product.includes('Potato') || item.product.includes('Onion')) ? 'Vegetables'
+                    : (item.product.includes('Meat') || item.product.includes('Seafood')) ? 'Meat & Seafood'
+                    : 'Other Agricultural';
+                  const record = addExportRecord({
+                    exporter_id: user?.id || 'u8',
+                    company_id: myCompany?.id || 'c1',
+                    product: item.product,
+                    product_category: productCategory,
+                    hs_code: item.hs_code,
+                    description: item.description,
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    estimated_value: item.value,
+                    currency: item.currency,
+                    country_of_origin: 'Pakistan',
+                    province_of_production: item.province,
+                    district_of_production: item.district,
+                    crop_year: item.crop_year,
+                    batch_number: item.batch,
+                    packaging_type: item.packaging,
+                    num_packages: item.packages,
+                    intended_shipment_date: item.shipment_date,
+                    buyer_name: buyer.name,
+                    buyer_company: buyer.company,
+                    buyer_country: buyer.country,
+                    buyer_address: buyer.address,
+                    buyer_contact: buyer.contact,
+                    buyer_email: buyer.email,
+                    buyer_phone: buyer.phone,
+                    purchase_order: buyer.po_number,
+                    destination_country: shipment.dest_country,
+                    destination_port: shipment.dest_port,
+                    port_of_departure: shipment.departure_port,
+                    transport_mode: shipment.transport_mode,
+                    shipping_company: shipment.shipping_company,
+                    container_number: shipment.container,
+                    bill_of_lading: shipment.bol_number,
+                    expected_departure: shipment.departure_date,
+                    expected_arrival: shipment.arrival_date,
+                    status: 'submitted',
+                    documents: Object.entries(uploadedDocs).filter(([, v]) => v).map(([docType]) => ({
+                      id: `doc-${Date.now()}-${docType.replace(/\s/g, '')}`,
+                      record_id: 'pending',
+                      document_type: docType,
+                      file_name: `${docType.replace(/\s/g, '_')}.pdf`,
+                      file_size: 1024,
+                      upload_date: new Date().toISOString(),
+                      uploaded_by: user?.id || 'u8',
+                      version: 1,
+                      verification_status: 'pending',
+                      file_url: '#',
+                    })),
+                  });
+                  setCreatedNumber(record.consignment_number);
                   setSubmitted(true);
                 }}
                 className="btn-primary"

@@ -35,8 +35,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, _password: string): Promise<{ error?: string }> => {
     setIsLoading(true);
     try {
-      // Mock mode: find user by email
-      const found = mockUsers.find(u => u.email === email);
+      // Mock mode: find user by email (seed users, then users persisted in the data store)
+      let found = mockUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+      if (!found && typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('export_portal_data_v1');
+          if (raw) {
+            const data = JSON.parse(raw);
+            const stored = (data?.users || []).find((u: User) => u.email.toLowerCase() === email.toLowerCase());
+            if (stored) found = stored;
+          }
+        } catch { /* ignore malformed storage */ }
+      }
       if (found) {
         const userWithLogin = { ...found, last_login: new Date().toISOString() };
         setUser(userWithLogin);

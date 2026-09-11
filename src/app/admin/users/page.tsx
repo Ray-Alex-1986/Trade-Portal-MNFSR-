@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { mockUsers } from '@/lib/mock-data';
-import { Search, Plus, Edit, Trash2, Shield, UserCheck, UserX, X, Save, CheckCircle } from 'lucide-react';
+import { useDataStore } from '@/lib/data-store';
+import { User, UserRole } from '@/lib/types';
+import { Search, Plus, Edit, Trash2, Shield, UserCheck, UserX, X, Save, CheckCircle, AlertTriangle } from 'lucide-react';
 
 interface UserState {
   id: string; full_name: string; email: string; role: string; institution?: string | null;
@@ -11,17 +12,17 @@ interface UserState {
 }
 
 export default function UserManagementPage() {
+  const { users, addUser, updateUser, deleteUser } = useDataStore();
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
-  const [users, setUsers] = useState<UserState[]>(mockUsers.map(u => ({ ...u })));
   const [editingUser, setEditingUser] = useState<UserState | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const [newUser, setNewUser] = useState({ full_name: '', email: '', role: 'exporter', institution: '' });
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
   const filtered = users.filter(u => {
     const matchSearch = !search || u.full_name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
@@ -35,36 +36,57 @@ export default function UserManagementPage() {
     tic: 'TIC', exporter: 'Exporter', buyer: 'Buyer', auditor: 'Auditor',
   };
 
-  const handleEdit = (user: UserState) => { setEditingUser({ ...user }); };
+  const handleEdit = (user: User) => { setEditingUser({ ...user }); };
   const handleSaveEdit = () => {
     if (!editingUser) return;
-    setUsers(prev => prev.map(u => u.id === editingUser.id ? editingUser : u));
+    if (!editingUser.full_name.trim() || !editingUser.email.trim()) {
+      showToast('Full name and email are required.', 'error');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editingUser.email.trim())) {
+      showToast('Please enter a valid email address.', 'error');
+      return;
+    }
+    if (users.some(u => u.id !== editingUser.id && u.email.toLowerCase() === editingUser.email.trim().toLowerCase())) {
+      showToast('Another user with this email already exists.', 'error');
+      return;
+    }
+    updateUser(editingUser.id, {
+      full_name: editingUser.full_name.trim(),
+      email: editingUser.email.trim(),
+      role: editingUser.role as UserRole,
+      institution: editingUser.institution || undefined,
+      is_active: editingUser.is_active,
+    });
     showToast(`User "${editingUser.full_name}" updated successfully`);
     setEditingUser(null);
   };
 
   const handleToggleActive = (userId: string) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id === userId) {
-        const newStatus = !u.is_active;
-        showToast(`User "${u.full_name}" ${newStatus ? 'activated' : 'deactivated'}`);
-        return { ...u, is_active: newStatus };
-      }
-      return u;
-    }));
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+    updateUser(userId, { is_active: !user.is_active });
+    showToast(`User "${user.full_name}" ${!user.is_active ? 'activated' : 'deactivated'}`);
   };
 
   const handleDelete = (userId: string) => {
     const user = users.find(u => u.id === userId);
-    setUsers(prev => prev.filter(u => u.id !== userId));
+    deleteUser(userId);
     setDeleteConfirm(null);
     showToast(`User "${user?.full_name}" deleted successfully`);
   };
 
   const handleAddUser = () => {
-    if (!newUser.full_name || !newUser.email) return;
-    const id = 'usr_' + Date.now();
-    setUsers(prev => [...prev, { id, full_name: newUser.full_name, email: newUser.email, role: newUser.role, institution: newUser.institution || null, is_active: true, last_login: null }]);
+    if (!newUser.full_name.trim() || !newUser.email.trim()) return;
+    if (!/^\S+@\S+\.\S+$/.test(newUser.email.trim())) {
+      showToast('Please enter a valid email address.', 'error');
+      return;
+    }
+    if (users.some(u => u.email.toLowerCase() === newUser.email.trim().toLowerCase())) {
+      showToast('A user with this email already exists.', 'error');
+      return;
+    }
+    addUser({ full_name: newUser.full_name.trim(), email: newUser.email.trim(), role: newUser.role, institution: newUser.institution || undefined });
     showToast(`User "${newUser.full_name}" added successfully`);
     setNewUser({ full_name: '', email: '', role: 'exporter', institution: '' });
     setShowAdd(false);
@@ -73,8 +95,9 @@ export default function UserManagementPage() {
   return (
     <DashboardLayout>
       {toast && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg animate-pulse">
-          <CheckCircle className="w-4 h-4" /> {toast}
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg max-w-md ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'} text-white`}>
+          {toast.type === 'error' ? <AlertTriangle className="w-4 h-4 flex-shrink-0" /> : <CheckCircle className="w-4 h-4 flex-shrink-0" />}
+          <span className="text-sm">{toast.msg}</span>
         </div>
       )}
 

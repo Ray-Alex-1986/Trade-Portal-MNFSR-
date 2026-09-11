@@ -4,16 +4,18 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Search, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import Image from 'next/image';
-import { mockComplaints } from '@/lib/mock-data';
+import { Complaint } from '@/lib/types';
+import { useDataStore } from '@/lib/data-store';
 import { getStatusColor } from '@/lib/utils';
 
 export default function TrackComplaintPage() {
   const [trackingNum, setTrackingNum] = useState('');
-  const [result, setResult] = useState<typeof mockComplaints[0] | null>(null);
+  const [result, setResult] = useState<Complaint | null>(null);
   const [searched, setSearched] = useState(false);
+  const { complaints } = useDataStore();
 
   const handleSearch = () => {
-    const found = mockComplaints.find(c => c.tracking_number.toLowerCase() === trackingNum.toLowerCase());
+    const found = complaints.find(c => c.tracking_number.toLowerCase() === trackingNum.toLowerCase());
     setResult(found || null);
     setSearched(true);
   };

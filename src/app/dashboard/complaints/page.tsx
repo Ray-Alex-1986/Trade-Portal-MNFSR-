@@ -2,14 +2,14 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { mockComplaints } from '@/lib/mock-data';
+import { useDataStore } from '@/lib/data-store';
 import { getStatusColor } from '@/lib/utils';
 import { Search, Plus, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ComplaintsPage() {
   const [search, setSearch] = useState('');
-  const complaints = mockComplaints;
+  const { complaints } = useDataStore();
 
   return (
     <DashboardLayout>
@@ -43,7 +43,7 @@ export default function ComplaintsPage() {
                 </tr>
               </thead>
               <tbody>
-                {complaints.slice(0, 15).map(c => (
+                {complaints.map(c => (
                   <tr key={c.id} className="border-t hover:bg-gray-50">
                     <td className="p-3 font-mono text-gov-green-600">{c.tracking_number}</td>
                     <td className="p-3">{c.category}</td>
