@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { User, UserRole } from './types';
 import { mockUsers } from './mock-data';
+import { getPermissions, hasPermission as permCheck, isAdminSection, canReviewStage, RolePermissions } from './permissions';
 
 interface AuthContextType {
   user: User | null;
@@ -79,10 +80,18 @@ export function useRole(): UserRole | null {
   return useAuth().user?.role ?? null;
 }
 
-export function isAdmin(role: UserRole | null): boolean {
-  return !!role && ['super_admin', 'moc_admin', 'tdap_admin', 'tdap_officer', 'nafsa_admin', 'nafsa_officer', 'tic'].includes(role);
+export function usePermissions(): RolePermissions {
+  return getPermissions(useAuth().user?.role);
 }
 
-export function canReview(role: UserRole | null): boolean {
-  return !!role && ['super_admin', 'tdap_admin', 'tdap_officer', 'nafsa_admin', 'nafsa_officer'].includes(role);
+/** @deprecated Use isAdminSection from permissions.ts instead */
+export function isAdmin(role: UserRole | null): boolean {
+  return isAdminSection(role);
 }
+
+/** @deprecated Use canReviewStage from permissions.ts instead */
+export function canReview(role: UserRole | null): boolean {
+  return canReviewStage(role, 'tdap') || canReviewStage(role, 'nafsa');
+}
+
+export { hasPermission, isAdminSection, canReviewStage, getPermissions } from './permissions';

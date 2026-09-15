@@ -2,7 +2,10 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import RoleGuard from '@/components/auth/RoleGuard';
 import { useDataStore } from '@/lib/data-store';
+import { useAuth } from '@/lib/auth';
+import { getReviewStage, ROUTE_ROLES } from '@/lib/permissions';
 import { monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
 import { formatNumber, getStatusColor } from '@/lib/utils';
 import { Users, Package, FileCheck, AlertTriangle, TrendingUp, Globe, Clock, CheckCircle, XCircle, BarChart3, Shield, RotateCcw, Plug, RefreshCw, Activity } from 'lucide-react';
@@ -14,9 +17,22 @@ const COLORS = ['#006B3F', '#D4AF37', '#0ea5e9', '#8b5cf6', '#ef4444', '#f97316'
 export default function AdminDashboardPage() {
   const [period, setPeriod] = useState('12m');
   const { companies, exportRecords, complaints, users, resetData, provinceApiSources, provinceDataRecords, provinceSyncLogs } = useDataStore();
+  const { user } = useAuth();
+  const myStage = getReviewStage(user?.role);
+  const isSuperAdmin = user?.role === 'super_admin';
 
-  const pendingRegistrations = companies.filter(c => ['submitted', 'under_tdap_review', 'under_nafsa_review'].includes(c.status));
-  const pendingExports = exportRecords.filter(r => ['submitted', 'under_tdap_review', 'under_nafsa_review'].includes(r.status));
+  const pendingRegistrations = companies.filter(c => {
+    if (isSuperAdmin) return ['submitted', 'under_nafsa_review', 'additional_info_required'].includes(c.status);
+    if (myStage === 'tdap') return c.status === 'submitted';
+    if (myStage === 'nafsa') return c.status === 'under_nafsa_review';
+    return ['submitted', 'under_nafsa_review'].includes(c.status);
+  });
+  const pendingExports = exportRecords.filter(r => {
+    if (isSuperAdmin) return ['submitted', 'under_nafsa_review', 'additional_info_required'].includes(r.status);
+    if (myStage === 'tdap') return r.status === 'submitted';
+    if (myStage === 'nafsa') return r.status === 'under_nafsa_review';
+    return ['submitted', 'under_nafsa_review'].includes(r.status);
+  });
   const openComplaints = complaints.filter(c => !['resolved', 'closed'].includes(c.status));
   const resolvedComplaints = complaints.filter(c => ['resolved', 'closed'].includes(c.status));
 
@@ -79,18 +95,30 @@ export default function AdminDashboardPage() {
     { month: 'Jul 26', received: 82, resolved: 80 }, { month: 'Aug 26', received: 76, resolved: 79 },
   ];
 
+  const dashTitle = isSuperAdmin ? 'MNFSR Super Admin Dashboard'
+    : myStage === 'tdap' ? 'TDAP Dashboard'
+    : myStage === 'nafsa' ? 'NAFSA Dashboard'
+    : 'Admin Dashboard';
+  const dashSubtitle = isSuperAdmin ? 'National Export Monitoring & Management Overview'
+    : myStage === 'tdap' ? 'Trade Development Authority — Review & Monitoring'
+    : myStage === 'nafsa' ? 'National Food Safety Authority — Review & Monitoring'
+    : 'Export Monitoring & Management';
+
   return (
     <DashboardLayout>
+      <RoleGuard allow={ROUTE_ROLES['/admin']}>
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">MNFSR Super Admin Dashboard</h1>
-            <p className="text-gray-500">National Export Monitoring & Management Overview</p>
+            <h1 className="text-2xl font-bold text-gray-900">{dashTitle}</h1>
+            <p className="text-gray-500">{dashSubtitle}</p>
           </div>
           <div className="flex gap-3 items-center">
-            <button onClick={() => { if (window.confirm('Reset all demo data to its initial state? This clears any changes you have made.')) resetData(); }} className="btn-outline flex items-center gap-2 text-sm" title="Restore the demo dataset">
-              <RotateCcw className="w-4 h-4" /> Reset Demo Data
-            </button>
+            {isSuperAdmin && (
+              <button onClick={() => { if (window.confirm('Reset all demo data to its initial state? This clears any changes you have made.')) resetData(); }} className="btn-outline flex items-center gap-2 text-sm" title="Restore the demo dataset">
+                <RotateCcw className="w-4 h-4" /> Reset Demo Data
+              </button>
+            )}
             <select value={period} onChange={e => setPeriod(e.target.value)} className="input-field w-40">
               <option value="1m">Last Month</option>
               <option value="3m">Last 3 Months</option>
@@ -305,6 +333,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       </div>
+      </RoleGuard>
     </DashboardLayout>
   );
 }

@@ -1,15 +1,16 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { User, Company, ExportRecord, Complaint, AuditLog, Notification, UserRole, ProvinceApiSource, ProvinceSyncLog, ProvinceDataRecord, CronInterval, SyncStatus } from './types';
+import { User, Company, ExportRecord, Complaint, AuditLog, Notification, UserRole, StageReviewStatus, ProvinceApiSource, ProvinceSyncLog, ProvinceDataRecord, CronInterval, SyncStatus } from './types';
 import {
   mockUsers, mockCompanies, mockExportRecords, mockComplaints, mockAuditLogs, mockNotifications,
   PRODUCTS, COUNTRIES, PROVINCES, PORTS, COMPLAINT_CATEGORIES,
   mockProvinceApiSources, mockProvinceSyncLogs, mockProvinceDataRecords,
 } from './mock-data';
 import { useAuth } from './auth';
+import { getReviewStage, hasPermission } from './permissions';
 
-const STORAGE_KEY = 'export_portal_data_v2';
+const STORAGE_KEY = 'export_portal_data_v3';
 
 export type MasterCategory =
   | 'products' | 'countries' | 'provinces' | 'ports'
@@ -329,6 +330,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       main_export_categories: input.company.main_export_categories || [],
       registration_number: input.registration_number,
       status: 'submitted',
+      tdap_review_status: 'pending' as StageReviewStatus,
+      nafsa_review_status: 'not_initiated' as StageReviewStatus,
       nadra_status: 'pending',
       secp_status: 'pending',
       ntn_status: 'pending',
@@ -354,14 +357,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
     mutate(null, prev => {
       const company = prev.companies.find(c => c.id === id);
       if (!company) return {};
-      const oldStatus = company.status;
-      let newStatus: Company['status'];
-      if (decision === 'approve') newStatus = 'approved';
-      else if (decision === 'reject') newStatus = 'rejected';
-      else newStatus = 'additional_info_required';
-
       const actor = actorRef.current;
-      const actionLabel = decision === 'approve' ? 'Approve Registration' : decision === 'reject' ? 'Reject Registration' : 'Request Info (Registration)';
+      const stage = getReviewStage(actor.role);
+      if (!stage) return {}; // role not allowed to review
+
+      const oldStatus = company.status;
+      let newStatus: Company['status'] = oldStatus;
+      let tdapReview: StageReviewStatus = company.tdap_review_status;
+      let nafsaReview: StageReviewStatus = company.nafsa_review_status;
+      let nadraStatus = company.nadra_status;
+      let secpStatus = company.secp_status;
+      let ntnStatus = company.ntn_status;
+
+      if (decision === 'approve') {
+        if (stage === 'tdap') {
+          tdapReview = 'reviewed';
+          nafsaReview = 'pending';
+          newStatus = 'under_nafsa_review';
+        } else if (stage === 'nafsa') {
+          nafsaReview = 'reviewed';
+          newStatus = 'approved';
+          nadraStatus = 'verified';
+          secpStatus = 'verified';
+          ntnStatus = 'verified';
+        }
+      } else if (decision === 'reject') {
+        newStatus = 'rejected';
+        if (stage === 'tdap') tdapReview = 'rejected';
+        else nafsaReview = 'rejected';
+      } else {
+        newStatus = 'additional_info_required';
+        if (stage === 'tdap') tdapReview = 'info_requested';
+        else nafsaReview = 'info_requested';
+      }
+
+      const stageLabel = stage === 'tdap' ? 'TDAP' : 'NAFSA';
+      const actionLabel = `${decision === 'approve' ? 'Approve' : decision === 'reject' ? 'Reject' : 'Request Info'} (${stageLabel})`;
       const log: AuditLog = {
         id: uid('al'), user_id: actor.id, user_name: actor.name, user_role: actor.role,
         action: actionLabel, module: 'Registration', record_id: company.registration_number,
@@ -369,21 +400,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
       };
 
       const notifType: Notification['type'] = decision === 'approve' ? 'success' : decision === 'reject' ? 'error' : 'warning';
-      const notifTitle = decision === 'approve' ? 'Registration Approved' : decision === 'reject' ? 'Registration Rejected' : 'Additional Information Required';
-      const notifMsg = decision === 'approve'
-        ? `Your registration ${company.registration_number} (${company.legal_name}) has been approved. You are now a verified exporter.`
-        : decision === 'reject'
-          ? `Your registration ${company.registration_number} (${company.legal_name}) has been rejected.${remarks ? ` Reason: ${remarks}` : ''}`
-          : `Additional information is required for registration ${company.registration_number}.${remarks ? ` Details: ${remarks}` : ''}`;
+      let notifTitle: string;
+      let notifMsg: string;
+      if (decision === 'approve' && stage === 'tdap') {
+        notifTitle = 'TDAP Review Passed';
+        notifMsg = `Your registration ${company.registration_number} has passed TDAP review and moved to NAFSA review.`;
+      } else if (decision === 'approve' && stage === 'nafsa') {
+        notifTitle = 'Registration Approved';
+        notifMsg = `Your registration ${company.registration_number} (${company.legal_name}) has been fully approved. You are now a verified exporter.`;
+      } else if (decision === 'reject') {
+        notifTitle = `Registration Rejected (${stageLabel})`;
+        notifMsg = `Your registration ${company.registration_number} has been rejected by ${stageLabel}.${remarks ? ` Reason: ${remarks}` : ''}`;
+      } else {
+        notifTitle = `Additional Information Required (${stageLabel})`;
+        notifMsg = `${stageLabel} requires additional information for registration ${company.registration_number}.${remarks ? ` Details: ${remarks}` : ''}`;
+      }
       const notification = notify(company.owner_id, notifTitle, notifMsg, notifType, '/dashboard');
 
       return {
         companies: prev.companies.map(c => c.id === id ? {
           ...c,
           status: newStatus,
-          nadra_status: decision === 'approve' ? 'verified' : c.nadra_status,
-          secp_status: decision === 'approve' ? 'verified' : c.secp_status,
-          ntn_status: decision === 'approve' ? 'verified' : c.ntn_status,
+          tdap_review_status: tdapReview,
+          nafsa_review_status: nafsaReview,
+          nadra_status: nadraStatus,
+          secp_status: secpStatus,
+          ntn_status: ntnStatus,
           updated_at: nowISO(),
         } : c),
         auditLogs: [log, ...prev.auditLogs],
@@ -506,30 +548,66 @@ export function DataProvider({ children }: { children: ReactNode }) {
     mutate(null, prev => {
       const record = prev.exportRecords.find(r => r.id === id);
       if (!record) return {};
-      const oldStatus = record.status;
-      const newStatus: ExportRecord['status'] =
-        decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'additional_info_required';
       const actor = actorRef.current;
-      const actionLabel = decision === 'approve' ? 'Approve Export Record' : decision === 'reject' ? 'Reject Export Record' : 'Request Info (Export Record)';
+      const stage = getReviewStage(actor.role);
+      if (!stage) return {};
+
+      const oldStatus = record.status;
+      let newStatus: ExportRecord['status'] = oldStatus;
+      let tdapReview = record.tdap_review_status || 'pending';
+      let nafsaReview = record.nafsa_review_status || 'not_initiated';
+
+      if (decision === 'approve') {
+        if (stage === 'tdap') {
+          tdapReview = 'reviewed';
+          nafsaReview = 'pending';
+          newStatus = 'under_nafsa_review';
+        } else if (stage === 'nafsa') {
+          nafsaReview = 'reviewed';
+          newStatus = 'approved';
+        }
+      } else if (decision === 'reject') {
+        newStatus = 'rejected';
+        if (stage === 'tdap') tdapReview = 'rejected';
+        else nafsaReview = 'rejected';
+      } else {
+        newStatus = 'additional_info_required';
+        if (stage === 'tdap') tdapReview = 'info_requested';
+        else nafsaReview = 'info_requested';
+      }
+
+      const stageLabel = stage === 'tdap' ? 'TDAP' : 'NAFSA';
+      const actionLabel = `${decision === 'approve' ? 'Approve' : decision === 'reject' ? 'Reject' : 'Request Info'} (${stageLabel})`;
       const log: AuditLog = {
         id: uid('al'), user_id: actor.id, user_name: actor.name, user_role: actor.role,
         action: actionLabel, module: 'Export Records', record_id: record.consignment_number,
         previous_value: oldStatus, new_value: newStatus, ip_address: '127.0.0.1', created_at: nowISO(),
       };
+
       const notifType: Notification['type'] = decision === 'approve' ? 'success' : decision === 'reject' ? 'error' : 'warning';
-      const notifTitle = decision === 'approve' ? 'Export Record Approved' : decision === 'reject' ? 'Export Record Rejected' : 'Additional Information Required';
-      const notifMsg = decision === 'approve'
-        ? `Your export record ${record.consignment_number} (${record.product}) has been approved and is ready for shipment.`
-        : decision === 'reject'
-          ? `Your export record ${record.consignment_number} (${record.product}) has been rejected.${remarks ? ` Reason: ${remarks}` : ''}`
-          : `Additional information is required for export record ${record.consignment_number}.${remarks ? ` Details: ${remarks}` : ''}`;
+      let notifTitle: string;
+      let notifMsg: string;
+      if (decision === 'approve' && stage === 'tdap') {
+        notifTitle = 'TDAP Review Passed';
+        notifMsg = `Export record ${record.consignment_number} passed TDAP review and moved to NAFSA review.`;
+      } else if (decision === 'approve' && stage === 'nafsa') {
+        notifTitle = 'Export Record Approved';
+        notifMsg = `Export record ${record.consignment_number} (${record.product}) has been fully approved and is ready for shipment.`;
+      } else if (decision === 'reject') {
+        notifTitle = `Export Rejected (${stageLabel})`;
+        notifMsg = `Export record ${record.consignment_number} has been rejected by ${stageLabel}.${remarks ? ` Reason: ${remarks}` : ''}`;
+      } else {
+        notifTitle = `Additional Information Required (${stageLabel})`;
+        notifMsg = `${stageLabel} requires additional information for export record ${record.consignment_number}.${remarks ? ` Details: ${remarks}` : ''}`;
+      }
       const notification = notify(record.exporter_id, notifTitle, notifMsg, notifType, '/dashboard/exports');
+
       return {
         exportRecords: prev.exportRecords.map(r => r.id === id ? {
           ...r,
           status: newStatus,
-          tdap_review_status: decision === 'reject' ? 'rejected' : decision === 'approve' ? 'reviewed' : r.tdap_review_status,
-          nafsa_review_status: decision === 'approve' ? 'reviewed' : r.nafsa_review_status,
+          tdap_review_status: tdapReview,
+          nafsa_review_status: nafsaReview,
           updated_at: nowISO(),
         } : r),
         auditLogs: [log, ...prev.auditLogs],

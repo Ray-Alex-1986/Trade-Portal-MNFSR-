@@ -10,6 +10,10 @@ export type ComplaintStatus = 'submitted' | 'acknowledged' | 'under_review' | 'a
 
 export type ComplaintPriority = 'low' | 'medium' | 'high' | 'critical';
 
+export type StageReviewStatus = 'pending' | 'reviewed' | 'rejected' | 'info_requested' | 'not_initiated';
+
+export type ReviewStage = 'tdap' | 'nafsa';
+
 export interface User {
   id: string;
   email: string;
@@ -41,6 +45,8 @@ export interface Company {
   main_export_categories: string[];
   registration_number: string;
   status: RegistrationStatus;
+  tdap_review_status: StageReviewStatus;
+  nafsa_review_status: StageReviewStatus;
   nadra_status: VerificationStatus;
   secp_status: VerificationStatus;
   ntn_status: VerificationStatus;

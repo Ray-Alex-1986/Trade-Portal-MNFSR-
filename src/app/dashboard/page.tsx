@@ -1,12 +1,12 @@
 'use client';
 
 import { useAuth } from '@/lib/auth';
-import { isAdmin } from '@/lib/auth';
+import { isAdminSection } from '@/lib/auth';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useDataStore } from '@/lib/data-store';
 import { monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
 import { formatNumber, formatCurrency, getStatusColor } from '@/lib/utils';
-import { Package, FileCheck, AlertTriangle, Clock, CheckCircle, XCircle, TrendingUp, Globe, BarChart3, FileText } from 'lucide-react';
+import { Package, FileCheck, AlertTriangle, Clock, CheckCircle, XCircle, TrendingUp, Globe, BarChart3, FileText, Search, Users } from 'lucide-react';
 import Link from 'next/link';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -14,13 +14,19 @@ const COLORS = ['#006B3F', '#D4AF37', '#0ea5e9', '#8b5cf6', '#ef4444', '#f97316'
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { exportRecords, complaints } = useDataStore();
+  const { exportRecords, complaints, companies } = useDataStore();
 
-  const userIsAdmin = isAdmin(user?.role ?? null);
+  const role = user?.role ?? 'exporter';
+  const userIsAdmin = isAdminSection(role) || role === 'tic';
+  const isBuyer = role === 'buyer';
+
   const myRecords = userIsAdmin
-    ? exportRecords  // Admins / officials see all records
+    ? exportRecords  // Admins / TIC see all records
     : exportRecords.filter(r => r.exporter_id === user?.id);  // Exporters see their own
   const myComplaints = complaints.filter(c => c.status !== 'closed').slice(0, 5);
+
+  // Buyer-specific: verified exporters list
+  const verifiedExporters = companies.filter(c => c.status === 'approved');
 
   const stats = {
     total: myRecords.length,
@@ -85,7 +91,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Empty state for new exporters */}
-        {!userIsAdmin && myRecords.length === 0 && (
+        {!userIsAdmin && !isBuyer && myRecords.length === 0 && (
           <div className="card p-8 text-center">
             <div className="w-16 h-16 bg-gov-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
               <Package className="w-8 h-8 text-gov-green-400" />
@@ -99,6 +105,49 @@ export default function DashboardPage() {
               <Link href="/dashboard/complaints/new" className="btn-outline">
                 File a Complaint
               </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Buyer view: Verified Exporters */}
+        {isBuyer && (
+          <div className="card">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Users className="w-4 h-4" /> Verified Exporters</h3>
+              <span className="text-sm text-gray-500">{verifiedExporters.length} approved companies</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left p-3 font-medium text-gray-500">Company</th>
+                    <th className="text-left p-3 font-medium text-gray-500">Province</th>
+                    <th className="text-left p-3 font-medium text-gray-500">Business Type</th>
+                    <th className="text-left p-3 font-medium text-gray-500">Products</th>
+                    <th className="text-left p-3 font-medium text-gray-500">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {verifiedExporters.length === 0 ? (
+                    <tr><td colSpan={5} className="p-8 text-center text-gray-400">No verified exporters yet.</td></tr>
+                  ) : (
+                    verifiedExporters.slice(0, 10).map(c => (
+                      <tr key={c.id} className="border-t hover:bg-gray-50">
+                        <td className="p-3">
+                          <div>
+                            <p className="font-medium text-gray-900">{c.legal_name}</p>
+                            <p className="text-xs text-gray-500">{c.registration_number}</p>
+                          </div>
+                        </td>
+                        <td className="p-3 text-gray-500">{c.province}</td>
+                        <td className="p-3 text-gray-500">{c.nature_of_business}</td>
+                        <td className="p-3 text-gray-500">{c.main_export_categories.join(', ') || '-'}</td>
+                        <td className="p-3"><span className="badge bg-green-100 text-green-800">Verified</span></td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}

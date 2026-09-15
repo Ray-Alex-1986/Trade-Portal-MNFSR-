@@ -4,7 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
-import { useAuth, isAdmin } from '@/lib/auth';
+import { useAuth } from '@/lib/auth';
+import { getNavForRole, ROLE_LABELS } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, FileText, Package, AlertTriangle, Users, Settings,
@@ -12,23 +13,8 @@ import {
   ChevronDown, FileCheck, Search, Moon, Sun, Database, Plug
 } from 'lucide-react';
 
-const exporterNav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/dashboard/exports', label: 'Export Records', icon: Package },
-  { href: '/dashboard/exports/new', label: 'New Export Record', icon: FileText },
-  { href: '/dashboard/complaints', label: 'My Complaints', icon: AlertTriangle },
-];
-
-const adminNav = [
-  { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
-  { href: '/admin/reviews', label: 'Review Workspace', icon: ClipboardList },
-  { href: '/admin/province-integrations', label: 'Province Integrations', icon: Plug },
-  { href: '/admin/users', label: 'User Management', icon: Users },
-  { href: '/admin/reports', label: 'Reports Center', icon: BarChart3 },
-  { href: '/admin/master-data', label: 'Master Data', icon: Database },
-  { href: '/admin/audit-logs', label: 'Audit Logs', icon: Shield },
-  { href: '/admin/notifications', label: 'Notifications', icon: Bell },
-];
+const exporterNav = [];  // kept for reference; nav now comes from getNavForRole()
+const adminNav = [];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -37,25 +23,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  const userIsAdmin = isAdmin(user?.role ?? null);
-  const navItems = userIsAdmin ? adminNav : exporterNav;
+  const navItems = getNavForRole(user?.role);
 
   const handleLogout = async () => {
     await logout();
     router.push('/');
-  };
-
-  const roleLabel: Record<string, string> = {
-    super_admin: 'MNFSR Super Admin',
-    moc_admin: 'MoC Admin',
-    tdap_admin: 'TDAP Admin',
-    tdap_officer: 'TDAP Officer',
-    nafsa_admin: 'NAFSA Admin',
-    nafsa_officer: 'NAFSA Officer',
-    tic: 'Trade & Investment Counsellor',
-    exporter: 'Exporter/Trader',
-    buyer: 'Buyer/Importer',
-    auditor: 'Auditor/Viewer',
   };
 
   return (
@@ -106,7 +78,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{user?.full_name}</p>
-                  <p className="text-xs text-gov-green-200 truncate">{roleLabel[user?.role || 'exporter']}</p>
+                  <p className="text-xs text-gov-green-200 truncate">{ROLE_LABELS[user?.role || 'exporter']}</p>
                 </div>
               </div>
               <button

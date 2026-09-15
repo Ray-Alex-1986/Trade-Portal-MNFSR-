@@ -1,7 +1,9 @@
 'use client';
 
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import RoleGuard from '@/components/auth/RoleGuard';
 import { useDataStore } from '@/lib/data-store';
+import { ROUTE_ROLES } from '@/lib/permissions';
 import { Bell, CheckCircle, Info, AlertTriangle, XCircle, Check } from 'lucide-react';
 
 export default function NotificationsPage() {
@@ -23,6 +25,7 @@ export default function NotificationsPage() {
 
   return (
     <DashboardLayout>
+      <RoleGuard allow={ROUTE_ROLES['/admin/notifications']}>
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
@@ -52,6 +55,7 @@ export default function NotificationsPage() {
           </div>
         </div>
       </div>
+      </RoleGuard>
     </DashboardLayout>
   );
 }

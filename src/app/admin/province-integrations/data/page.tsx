@@ -2,7 +2,9 @@
 
 import { useState, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import RoleGuard from '@/components/auth/RoleGuard';
 import { useDataStore } from '@/lib/data-store';
+import { ROUTE_ROLES } from '@/lib/permissions';
 import { formatDateTime } from '@/lib/utils';
 import { PROVINCES } from '@/lib/mock-data';
 import {
@@ -60,6 +62,7 @@ export default function ProvinceDataListingPage() {
 
   return (
     <DashboardLayout>
+      <RoleGuard allow={ROUTE_ROLES['/admin/province-integrations/data']}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -242,6 +245,7 @@ export default function ProvinceDataListingPage() {
           )}
         </div>
       </div>
+      </RoleGuard>
     </DashboardLayout>
   );
 }

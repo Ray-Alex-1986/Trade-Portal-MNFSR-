@@ -2,7 +2,10 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import RoleGuard from '@/components/auth/RoleGuard';
 import { useDataStore, ReviewDecision } from '@/lib/data-store';
+import { useAuth } from '@/lib/auth';
+import { getReviewStage, ROUTE_ROLES } from '@/lib/permissions';
 import { getStatusColor } from '@/lib/utils';
 import { CheckCircle, XCircle, MessageSquare, Eye, FileText, AlertTriangle, Package, Info } from 'lucide-react';
 
@@ -14,6 +17,8 @@ export default function ReviewWorkspacePage() {
     reviewRegistration, reviewExportRecord,
     resolveComplaint, escalateComplaint, addComplaintNote,
   } = useDataStore();
+  const { user } = useAuth();
+  const myStage = getReviewStage(user?.role);
 
   const [tab, setTab] = useState<Tab>('registrations');
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
@@ -27,9 +32,22 @@ export default function ReviewWorkspacePage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  const pendingRegistrations = companies.filter(c => ['submitted', 'under_tdap_review', 'under_nafsa_review'].includes(c.status));
-  const pendingExports = exportRecords.filter(r => ['submitted', 'under_tdap_review', 'under_nafsa_review'].includes(r.status));
+  // Filter by review stage: TDAP sees 'submitted', NAFSA sees 'under_nafsa_review', Super Admin sees all
+  const pendingRegistrations = companies.filter(c => {
+    if (user?.role === 'super_admin') return ['submitted', 'under_nafsa_review', 'additional_info_required'].includes(c.status);
+    if (myStage === 'tdap') return c.status === 'submitted';
+    if (myStage === 'nafsa') return c.status === 'under_nafsa_review';
+    return false;
+  });
+  const pendingExports = exportRecords.filter(r => {
+    if (user?.role === 'super_admin') return ['submitted', 'under_nafsa_review', 'additional_info_required'].includes(r.status);
+    if (myStage === 'tdap') return r.status === 'submitted';
+    if (myStage === 'nafsa') return r.status === 'under_nafsa_review';
+    return false;
+  });
   const pendingComplaints = complaints.filter(c => ['submitted', 'acknowledged', 'under_review', 'assigned', 'investigation', 'escalated'].includes(c.status));
+
+  const stageLabel = myStage === 'tdap' ? 'TDAP' : myStage === 'nafsa' ? 'NAFSA' : 'All';
 
   const tabs = [
     { key: 'registrations' as Tab, label: 'Registrations', count: pendingRegistrations.length, icon: FileText },
@@ -109,6 +127,7 @@ export default function ReviewWorkspacePage() {
 
   return (
     <DashboardLayout>
+      <RoleGuard allow={ROUTE_ROLES['/admin/reviews']}>
       {toast && (
         <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg max-w-md ${toast.type === 'error' ? 'bg-red-600' : toast.type === 'info' ? 'bg-blue-600' : 'bg-green-600'} text-white`}>
           {toast.type === 'error' ? <AlertTriangle className="w-4 h-4 flex-shrink-0" /> : <CheckCircle className="w-4 h-4 flex-shrink-0" />}
@@ -120,7 +139,9 @@ export default function ReviewWorkspacePage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Review &amp; Approval Workspace</h1>
-            <p className="text-sm text-gray-500">Approve, reject, or request information — decisions update records immediately and notify the exporter.</p>
+            <p className="text-sm text-gray-500">
+              {user?.role === 'super_admin' ? 'Super Admin — viewing all stages.' : `${stageLabel} Stage`} — Approve, reject, or request information.
+            </p>
           </div>
         </div>
 
@@ -210,6 +231,19 @@ export default function ReviewWorkspacePage() {
                   <div><span className="text-gray-500">Business Type:</span> <span className="font-medium">{selectedRegistration.nature_of_business}</span></div>
                 </div>
                 <div>
+                  <h4 className="font-medium text-gray-700 mb-2">Review Pipeline</h4>
+                  <div className="flex gap-4">
+                    <div className={`flex-1 p-3 rounded-lg text-sm border-2 ${selectedRegistration.tdap_review_status === 'reviewed' ? 'border-green-300 bg-green-50' : selectedRegistration.tdap_review_status === 'rejected' ? 'border-red-300 bg-red-50' : 'border-yellow-300 bg-yellow-50'}`}>
+                      <span className="font-medium">TDAP Stage</span>
+                      <span className={`badge ml-2 ${selectedRegistration.tdap_review_status === 'reviewed' ? 'bg-green-100 text-green-800' : selectedRegistration.tdap_review_status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{selectedRegistration.tdap_review_status?.replace(/_/g, ' ') || 'pending'}</span>
+                    </div>
+                    <div className={`flex-1 p-3 rounded-lg text-sm border-2 ${selectedRegistration.nafsa_review_status === 'reviewed' ? 'border-green-300 bg-green-50' : selectedRegistration.nafsa_review_status === 'rejected' ? 'border-red-300 bg-red-50' : selectedRegistration.nafsa_review_status === 'not_initiated' ? 'border-gray-200 bg-gray-50' : 'border-yellow-300 bg-yellow-50'}`}>
+                      <span className="font-medium">NAFSA Stage</span>
+                      <span className={`badge ml-2 ${selectedRegistration.nafsa_review_status === 'reviewed' ? 'bg-green-100 text-green-800' : selectedRegistration.nafsa_review_status === 'rejected' ? 'bg-red-100 text-red-800' : selectedRegistration.nafsa_review_status === 'not_initiated' ? 'bg-gray-100 text-gray-600' : 'bg-yellow-100 text-yellow-800'}`}>{selectedRegistration.nafsa_review_status?.replace(/_/g, ' ') || 'not started'}</span>
+                    </div>
+                  </div>
+                </div>
+                <div>
                   <h4 className="font-medium text-gray-700 mb-2">Verification Checklist</h4>
                   <div className="space-y-2">
                     {[
@@ -254,6 +288,19 @@ export default function ReviewWorkspacePage() {
                 {selectedExport.description && (
                   <div className="text-sm p-3 bg-gray-50 rounded-lg"><span className="text-gray-500">Description:</span> {selectedExport.description}</div>
                 )}
+                <div>
+                  <h4 className="font-medium text-gray-700 mb-2">Review Pipeline</h4>
+                  <div className="flex gap-4">
+                    <div className={`flex-1 p-3 rounded-lg text-sm border-2 ${selectedExport.tdap_review_status === 'reviewed' ? 'border-green-300 bg-green-50' : selectedExport.tdap_review_status === 'rejected' ? 'border-red-300 bg-red-50' : 'border-yellow-300 bg-yellow-50'}`}>
+                      <span className="font-medium">TDAP Stage</span>
+                      <span className={`badge ml-2 ${selectedExport.tdap_review_status === 'reviewed' ? 'bg-green-100 text-green-800' : selectedExport.tdap_review_status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{selectedExport.tdap_review_status?.replace(/_/g, ' ') || 'pending'}</span>
+                    </div>
+                    <div className={`flex-1 p-3 rounded-lg text-sm border-2 ${selectedExport.nafsa_review_status === 'reviewed' ? 'border-green-300 bg-green-50' : selectedExport.nafsa_review_status === 'rejected' ? 'border-red-300 bg-red-50' : selectedExport.nafsa_review_status === 'not_initiated' ? 'border-gray-200 bg-gray-50' : 'border-yellow-300 bg-yellow-50'}`}>
+                      <span className="font-medium">NAFSA Stage</span>
+                      <span className={`badge ml-2 ${selectedExport.nafsa_review_status === 'reviewed' ? 'bg-green-100 text-green-800' : selectedExport.nafsa_review_status === 'rejected' ? 'bg-red-100 text-red-800' : selectedExport.nafsa_review_status === 'not_initiated' ? 'bg-gray-100 text-gray-600' : 'bg-yellow-100 text-yellow-800'}`}>{selectedExport.nafsa_review_status?.replace(/_/g, ' ') || 'not started'}</span>
+                    </div>
+                  </div>
+                </div>
                 <div>
                   <h4 className="font-medium text-gray-700 mb-2">Officer Remarks</h4>
                   <textarea value={remarks} onChange={e => setRemarks(e.target.value)} className="input-field" rows={3} placeholder="Add review remarks (required for rejection / info requests)..." />
@@ -314,6 +361,7 @@ export default function ReviewWorkspacePage() {
           </div>
         </div>
       </div>
+      </RoleGuard>
     </DashboardLayout>
   );
 }

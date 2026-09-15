@@ -1,4 +1,4 @@
-import { User, Company, ExportRecord, Complaint, Notification, AuditLog, DashboardStats, ProvinceApiSource, ProvinceSyncLog, ProvinceDataRecord } from './types';
+import { User, Company, ExportRecord, Complaint, Notification, AuditLog, DashboardStats, ProvinceApiSource, ProvinceSyncLog, ProvinceDataRecord, StageReviewStatus, RegistrationStatus } from './types';
 
 export const PRODUCTS = ['Basmati Rice', 'Mango (Chaunsa)', 'Mango (Sindhri)', 'Kinnow', 'Dates (Aseel)', 'Sesame Seeds', 'Maize', 'Potatoes', 'Onions', 'Beef Meat', 'Seafood (Shrimp)', 'Olive Oil', 'Citrus Fruits', 'Red Chili', 'Cotton'];
 export const COUNTRIES = ['China', 'United Arab Emirates', 'Saudi Arabia', 'United Kingdom', 'Malaysia', 'Indonesia', 'Qatar', 'Oman', 'Germany', 'Kazakhstan', 'Afghanistan', 'Turkey', 'South Africa', 'United States', 'Japan'];
@@ -42,7 +42,24 @@ function randomNum(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-const statuses: Array<Company['status']> = ['approved', 'approved', 'approved', 'approved', 'submitted', 'under_tdap_review', 'under_nafsa_review', 'rejected', 'draft', 'approved'];
+const statuses: Array<RegistrationStatus> = ['approved', 'approved', 'approved', 'submitted', 'under_tdap_review', 'under_nafsa_review', 'additional_info_required', 'rejected', 'draft', 'approved'];
+
+function getCompanyReviewStatuses(status: RegistrationStatus): { tdap: StageReviewStatus; nafsa: StageReviewStatus } {
+  switch (status) {
+    case 'approved': case 'verified':
+      return { tdap: 'reviewed', nafsa: 'reviewed' };
+    case 'submitted': case 'under_tdap_review':
+      return { tdap: 'pending', nafsa: 'not_initiated' };
+    case 'under_nafsa_review':
+      return { tdap: 'reviewed', nafsa: 'pending' };
+    case 'additional_info_required':
+      return { tdap: 'info_requested', nafsa: 'not_initiated' };
+    case 'rejected':
+      return { tdap: 'rejected', nafsa: 'not_initiated' };
+    default:
+      return { tdap: 'not_initiated', nafsa: 'not_initiated' };
+  }
+}
 
 export const mockUsers: User[] = [
   { id: 'u1', email: 'superadmin@mnfsr.gov.pk', full_name: 'Dr. Ahmed Raza Khan', role: 'super_admin', institution: 'MNFSR', is_active: true, created_at: '2025-01-15T08:00:00Z', last_login: '2026-09-09T14:30:00Z' },
@@ -76,6 +93,8 @@ export const mockCompanies: Company[] = companyNames.map((name, i) => ({
   main_export_categories: [randomItem(PRODUCTS), randomItem(PRODUCTS)],
   registration_number: `REG-${(2024000 + i + 1).toString()}`,
   status: statuses[i % statuses.length],
+  tdap_review_status: getCompanyReviewStatuses(statuses[i % statuses.length]).tdap,
+  nafsa_review_status: getCompanyReviewStatuses(statuses[i % statuses.length]).nafsa,
   nadra_status: 'verified',
   secp_status: i % 5 === 0 ? 'pending' : 'verified',
   ntn_status: 'verified',
@@ -130,8 +149,8 @@ export const mockExportRecords: ExportRecord[] = Array.from({ length: 60 }, (_, 
     expected_departure: randomDate(new Date('2026-02-01'), new Date('2026-11-30')),
     expected_arrival: randomDate(new Date('2026-03-01'), new Date('2026-12-31')),
     status,
-    tdap_review_status: ['submitted', 'under_tdap_review', 'approved', 'rejected'].includes(status) ? (status === 'rejected' ? 'rejected' : 'reviewed') : undefined,
-    nafsa_review_status: ['under_nafsa_review', 'approved'].includes(status) ? 'reviewed' : undefined,
+    tdap_review_status: ['submitted', 'under_tdap_review', 'additional_info_required'].includes(status) ? 'pending' : ['under_nafsa_review', 'approved', 'ready_for_shipment', 'shipped', 'delivered', 'closed'].includes(status) ? 'reviewed' : (status === 'rejected' ? 'rejected' : undefined),
+    nafsa_review_status: ['under_nafsa_review'].includes(status) ? 'pending' : ['approved', 'ready_for_shipment', 'shipped', 'delivered', 'closed'].includes(status) ? 'reviewed' : (status === 'rejected' ? 'rejected' : undefined),
     documents: [],
     created_at: randomDate(new Date('2025-06-01'), new Date('2026-09-01')),
     updated_at: randomDate(new Date('2026-08-01'), new Date('2026-09-09')),

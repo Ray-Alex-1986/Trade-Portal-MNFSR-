@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import RoleGuard from '@/components/auth/RoleGuard';
 import { useDataStore } from '@/lib/data-store';
+import { ROUTE_ROLES } from '@/lib/permissions';
 import { Search, Filter, Download } from 'lucide-react';
 
 export default function AuditLogsPage() {
@@ -25,6 +27,7 @@ export default function AuditLogsPage() {
 
   return (
     <DashboardLayout>
+      <RoleGuard allow={ROUTE_ROLES['/admin/audit-logs']}>
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
@@ -80,6 +83,7 @@ export default function AuditLogsPage() {
           </div>
         </div>
       </div>
+      </RoleGuard>
     </DashboardLayout>
   );
 }

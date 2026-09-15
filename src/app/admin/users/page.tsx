@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import RoleGuard from '@/components/auth/RoleGuard';
 import { useDataStore } from '@/lib/data-store';
+import { ROUTE_ROLES } from '@/lib/permissions';
 import { User, UserRole } from '@/lib/types';
 import { Search, Plus, Edit, Trash2, Shield, UserCheck, UserX, X, Save, CheckCircle, AlertTriangle } from 'lucide-react';
 
@@ -94,6 +96,7 @@ export default function UserManagementPage() {
 
   return (
     <DashboardLayout>
+      <RoleGuard allow={ROUTE_ROLES['/admin/users']}>
       {toast && (
         <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg max-w-md ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'} text-white`}>
           {toast.type === 'error' ? <AlertTriangle className="w-4 h-4 flex-shrink-0" /> : <CheckCircle className="w-4 h-4 flex-shrink-0" />}
@@ -241,6 +244,7 @@ export default function UserManagementPage() {
           <div className="p-3 border-t text-sm text-gray-500">Showing {filtered.length} of {users.length} users</div>
         </div>
       </div>
+      </RoleGuard>
     </DashboardLayout>
   );
 }
