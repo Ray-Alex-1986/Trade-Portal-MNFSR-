@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, ChevronLeft, CheckCircle, AlertCircle, Upload } from 'lucide-react';
+import { ChevronRight, ChevronLeft, CheckCircle, AlertCircle, Upload, X, FileText } from 'lucide-react';
 import Image from 'next/image';
 import { PROVINCES, DISTRICTS, PRODUCTS, mockVerificationAPI } from '@/lib/mock-data';
 import { generateId } from '@/lib/utils';
@@ -31,6 +31,46 @@ export default function RegisterPage() {
   });
 
   const [consent, setConsent] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<Record<string, File>>({});
+  const [fileError, setFileError] = useState('');
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+  const ACCEPTED_EXTENSIONS = '.pdf,.jpg,.jpeg,.png';
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+  const handleFileSelect = (fieldKey: string, file: File | undefined) => {
+    if (!file) return;
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      setFileError(`Invalid file type for "${file.name}". Please upload PDF, JPG, or PNG.`);
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setFileError(`File "${file.name}" exceeds 10MB limit.`);
+      return;
+    }
+    setFileError('');
+    setUploadedFiles(prev => ({ ...prev, [fieldKey]: file }));
+  };
+
+  const handleDrop = (e: React.DragEvent, fieldKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.dataTransfer.files?.[0];
+    handleFileSelect(fieldKey, file);
+  };
+
+  const removeFile = (fieldKey: string) => {
+    setUploadedFiles(prev => {
+      const next = { ...prev };
+      delete next[fieldKey];
+      return next;
+    });
+    // Reset the file input so the same file can be re-selected
+    if (fileInputRefs.current[fieldKey]) {
+      fileInputRefs.current[fieldKey]!.value = '';
+    }
+  };
 
   const runVerification = async () => {
     setVerifying(true);
@@ -111,6 +151,12 @@ export default function RegisterPage() {
           {step === 0 && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-gray-900">Step 1: Company Information</h2>
+              {fileError && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {fileError}
+                </div>
+              )}
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Legal Name of Company *</label>
@@ -185,17 +231,51 @@ export default function RegisterPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Company Registration Certificate *</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer">
-                    <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                    <p className="text-sm text-gray-500">Click or drag to upload (PDF, JPG, PNG)</p>
-                  </div>
+                  {uploadedFiles['reg_cert'] ? (
+                    <div className="flex items-center justify-between p-3 border border-green-300 bg-green-50 rounded-lg">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
+                        <span className="text-sm text-gray-800 truncate">{uploadedFiles['reg_cert'].name}</span>
+                        <span className="text-xs text-gray-400">({(uploadedFiles['reg_cert'].size / 1024).toFixed(0)} KB)</span>
+                      </div>
+                      <button type="button" onClick={() => removeFile('reg_cert')} className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0"><X className="w-4 h-4" /></button>
+                    </div>
+                  ) : (
+                    <div
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer transition-colors"
+                      onClick={() => fileInputRefs.current['reg_cert']?.click()}
+                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={e => handleDrop(e, 'reg_cert')}
+                    >
+                      <input ref={el => { fileInputRefs.current['reg_cert'] = el; }} type="file" accept={ACCEPTED_EXTENSIONS} className="hidden" onChange={e => handleFileSelect('reg_cert', e.target.files?.[0])} />
+                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+                      <p className="text-sm text-gray-500">Click or drag to upload (PDF, JPG, PNG)</p>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">NTN Certificate *</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer">
-                    <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                    <p className="text-sm text-gray-500">Click or drag to upload (PDF, JPG, PNG)</p>
-                  </div>
+                  {uploadedFiles['ntn_cert'] ? (
+                    <div className="flex items-center justify-between p-3 border border-green-300 bg-green-50 rounded-lg">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
+                        <span className="text-sm text-gray-800 truncate">{uploadedFiles['ntn_cert'].name}</span>
+                        <span className="text-xs text-gray-400">({(uploadedFiles['ntn_cert'].size / 1024).toFixed(0)} KB)</span>
+                      </div>
+                      <button type="button" onClick={() => removeFile('ntn_cert')} className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0"><X className="w-4 h-4" /></button>
+                    </div>
+                  ) : (
+                    <div
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer transition-colors"
+                      onClick={() => fileInputRefs.current['ntn_cert']?.click()}
+                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={e => handleDrop(e, 'ntn_cert')}
+                    >
+                      <input ref={el => { fileInputRefs.current['ntn_cert'] = el; }} type="file" accept={ACCEPTED_EXTENSIONS} className="hidden" onChange={e => handleFileSelect('ntn_cert', e.target.files?.[0])} />
+                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+                      <p className="text-sm text-gray-500">Click or drag to upload (PDF, JPG, PNG)</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -204,6 +284,12 @@ export default function RegisterPage() {
           {step === 1 && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-gray-900">Step 2: Authorized Representative</h2>
+              {fileError && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {fileError}
+                </div>
+              )}
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">CNIC/NICOP Number *</label>
@@ -239,17 +325,51 @@ export default function RegisterPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Authority Letter *</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer">
-                    <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                    <p className="text-sm text-gray-500">Upload authority letter</p>
-                  </div>
+                  {uploadedFiles['auth_letter'] ? (
+                    <div className="flex items-center justify-between p-3 border border-green-300 bg-green-50 rounded-lg">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
+                        <span className="text-sm text-gray-800 truncate">{uploadedFiles['auth_letter'].name}</span>
+                        <span className="text-xs text-gray-400">({(uploadedFiles['auth_letter'].size / 1024).toFixed(0)} KB)</span>
+                      </div>
+                      <button type="button" onClick={() => removeFile('auth_letter')} className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0"><X className="w-4 h-4" /></button>
+                    </div>
+                  ) : (
+                    <div
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer transition-colors"
+                      onClick={() => fileInputRefs.current['auth_letter']?.click()}
+                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={e => handleDrop(e, 'auth_letter')}
+                    >
+                      <input ref={el => { fileInputRefs.current['auth_letter'] = el; }} type="file" accept={ACCEPTED_EXTENSIONS} className="hidden" onChange={e => handleFileSelect('auth_letter', e.target.files?.[0])} />
+                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+                      <p className="text-sm text-gray-500">Upload authority letter</p>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">CNIC Copy *</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer">
-                    <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                    <p className="text-sm text-gray-500">Upload CNIC copy</p>
-                  </div>
+                  {uploadedFiles['cnic_copy'] ? (
+                    <div className="flex items-center justify-between p-3 border border-green-300 bg-green-50 rounded-lg">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
+                        <span className="text-sm text-gray-800 truncate">{uploadedFiles['cnic_copy'].name}</span>
+                        <span className="text-xs text-gray-400">({(uploadedFiles['cnic_copy'].size / 1024).toFixed(0)} KB)</span>
+                      </div>
+                      <button type="button" onClick={() => removeFile('cnic_copy')} className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0"><X className="w-4 h-4" /></button>
+                    </div>
+                  ) : (
+                    <div
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer transition-colors"
+                      onClick={() => fileInputRefs.current['cnic_copy']?.click()}
+                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={e => handleDrop(e, 'cnic_copy')}
+                    >
+                      <input ref={el => { fileInputRefs.current['cnic_copy'] = el; }} type="file" accept={ACCEPTED_EXTENSIONS} className="hidden" onChange={e => handleFileSelect('cnic_copy', e.target.files?.[0])} />
+                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+                      <p className="text-sm text-gray-500">Upload CNIC copy</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
