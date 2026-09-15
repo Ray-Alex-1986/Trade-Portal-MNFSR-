@@ -16,6 +16,38 @@ export type MasterCategory =
 
 export type ReviewDecision = 'approve' | 'reject' | 'request_info';
 
+/**
+ * Every mutation resolves to a result object instead of throwing so pages can
+ * show a precise success or failure message. `error` is set when the change
+ * could not be persisted by the active backend.
+ */
+export interface MutationResult<T = undefined> {
+  error?: string;
+  data?: T;
+}
+
+export interface NewUserInput {
+  full_name: string;
+  email: string;
+  role: string;
+  institution?: string;
+  password?: string;
+}
+
+export interface RegistrationInput {
+  company: Partial<Company>;
+  representative: {
+    full_name: string;
+    email: string;
+    username: string;
+    password?: string;
+    cnic: string;
+    designation: string;
+    mobile: string;
+  };
+  registration_number: string;
+}
+
 export interface DataStoreContextType {
   isLoaded: boolean;
   users: User[];
@@ -29,39 +61,37 @@ export interface DataStoreContextType {
   provinceSyncLogs: ProvinceSyncLog[];
   provinceDataRecords: ProvinceDataRecord[];
   // Users
-  addUser: (input: { full_name: string; email: string; role: string; institution?: string; password?: string }) => User;
-  updateUser: (id: string, patch: Partial<User>) => void;
-  deleteUser: (id: string) => void;
+  addUser: (input: NewUserInput) => Promise<MutationResult<User>>;
+  updateUser: (id: string, patch: Partial<User>) => Promise<MutationResult>;
+  deleteUser: (id: string) => Promise<MutationResult>;
   // Registrations
-  submitRegistration: (input: {
-    company: Partial<Company>;
-    representative: { full_name: string; email: string; username: string; password?: string; cnic: string; designation: string; mobile: string };
-    registration_number: string;
-  }) => { user: User; company: Company };
-  reviewRegistration: (id: string, decision: ReviewDecision, remarks?: string) => void;
+  submitRegistration: (input: RegistrationInput) => Promise<MutationResult<{ user: User; company: Company }>>;
+  reviewRegistration: (id: string, decision: ReviewDecision, remarks?: string) => Promise<MutationResult>;
+  resubmitRegistration: (id: string, patch?: Partial<Company>) => Promise<MutationResult>;
   // Export records
-  addExportRecord: (input: Partial<ExportRecord>) => ExportRecord;
-  updateExportRecord: (id: string, patch: Partial<ExportRecord>) => void;
-  deleteExportRecord: (id: string) => void;
-  reviewExportRecord: (id: string, decision: ReviewDecision, remarks?: string) => void;
+  addExportRecord: (input: Partial<ExportRecord>) => Promise<MutationResult<ExportRecord>>;
+  updateExportRecord: (id: string, patch: Partial<ExportRecord>) => Promise<MutationResult>;
+  deleteExportRecord: (id: string) => Promise<MutationResult>;
+  reviewExportRecord: (id: string, decision: ReviewDecision, remarks?: string) => Promise<MutationResult>;
   // Complaints
-  addComplaint: (input: Partial<Complaint> & { tracking_number: string }) => Complaint;
-  updateComplaint: (id: string, patch: Partial<Complaint>) => void;
-  resolveComplaint: (id: string, resolutionSummary: string) => void;
-  escalateComplaint: (id: string) => void;
-  addComplaintNote: (id: string, note: string) => void;
+  addComplaint: (input: Partial<Complaint> & { tracking_number: string }) => Promise<MutationResult<Complaint>>;
+  updateComplaint: (id: string, patch: Partial<Complaint>) => Promise<MutationResult>;
+  resolveComplaint: (id: string, resolutionSummary: string) => Promise<MutationResult>;
+  escalateComplaint: (id: string) => Promise<MutationResult>;
+  addComplaintNote: (id: string, note: string) => Promise<MutationResult>;
   // Master data
-  addMasterItem: (category: MasterCategory, value: string) => void;
-  updateMasterItem: (category: MasterCategory, index: number, value: string) => void;
-  deleteMasterItem: (category: MasterCategory, index: number) => void;
+  addMasterItem: (category: MasterCategory, value: string) => Promise<MutationResult>;
+  updateMasterItem: (category: MasterCategory, index: number, value: string) => Promise<MutationResult>;
+  deleteMasterItem: (category: MasterCategory, index: number) => Promise<MutationResult>;
   // Province API integrations
-  addProvinceApiSource: (input: Partial<ProvinceApiSource>) => ProvinceApiSource;
-  updateProvinceApiSource: (id: string, patch: Partial<ProvinceApiSource>) => void;
-  deleteProvinceApiSource: (id: string) => void;
-  triggerProvinceSync: (sourceId: string) => void;
+  addProvinceApiSource: (input: Partial<ProvinceApiSource>) => Promise<MutationResult<ProvinceApiSource>>;
+  updateProvinceApiSource: (id: string, patch: Partial<ProvinceApiSource>) => Promise<MutationResult>;
+  deleteProvinceApiSource: (id: string) => Promise<MutationResult>;
+  triggerProvinceSync: (sourceId: string) => Promise<MutationResult>;
   // Misc
-  markAllNotificationsRead: () => void;
-  resetData: () => void;
+  markAllNotificationsRead: () => Promise<MutationResult>;
+  resetData: () => Promise<MutationResult>;
+  refresh: () => Promise<void>;
 }
 
 const EMPTY_MASTER: Record<MasterCategory, string[]> = {
@@ -69,7 +99,7 @@ const EMPTY_MASTER: Record<MasterCategory, string[]> = {
   complaint_categories: [], document_types: [], roles: [], institutions: [],
 };
 
-const missing = (name: string) => (): never => { throw new Error(`${name} called outside DataProvider`); };
+const missing = (name: string) => async () => ({ error: `${name} called outside DataProvider` });
 
 export const DataStoreContext = createContext<DataStoreContextType>({
   isLoaded: false,
@@ -78,6 +108,7 @@ export const DataStoreContext = createContext<DataStoreContextType>({
   provinceApiSources: [], provinceSyncLogs: [], provinceDataRecords: [],
   addUser: missing('addUser'), updateUser: missing('updateUser'), deleteUser: missing('deleteUser'),
   submitRegistration: missing('submitRegistration'), reviewRegistration: missing('reviewRegistration'),
+  resubmitRegistration: missing('resubmitRegistration'),
   addExportRecord: missing('addExportRecord'), updateExportRecord: missing('updateExportRecord'),
   deleteExportRecord: missing('deleteExportRecord'), reviewExportRecord: missing('reviewExportRecord'),
   addComplaint: missing('addComplaint'), updateComplaint: missing('updateComplaint'),
@@ -87,6 +118,7 @@ export const DataStoreContext = createContext<DataStoreContextType>({
   addProvinceApiSource: missing('addProvinceApiSource'), updateProvinceApiSource: missing('updateProvinceApiSource'),
   deleteProvinceApiSource: missing('deleteProvinceApiSource'), triggerProvinceSync: missing('triggerProvinceSync'),
   markAllNotificationsRead: missing('markAllNotificationsRead'), resetData: missing('resetData'),
+  refresh: async () => {},
 });
 
 /**

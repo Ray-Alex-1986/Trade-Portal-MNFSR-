@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { RowDataPacket } from 'mysql2';
 import { verifyPassword } from '@/lib/mysql/passwords';
-import { createMySqlSession, mySqlSessionCookieOptions } from '@/lib/mysql/session';
+import { createMySqlSession, MYSQL_SESSION_COOKIE, mySqlSessionCookieOptions } from '@/lib/mysql/session';
 import { getMySqlPool } from '@/lib/mysql/server';
 import { UserRole } from '@/lib/types';
 
@@ -61,5 +61,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'The authentication service is unavailable.' }, { status: 503 });
   }
 }
-
-const MYSQL_SESSION_COOKIE = 'trade_portal_session';

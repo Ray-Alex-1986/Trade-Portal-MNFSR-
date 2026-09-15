@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { UserRole } from '@/lib/types';
-import { isAdminSection } from '@/lib/permissions';
+import { getHomeForRole, isAdminSection } from '@/lib/permissions';
 import { Shield, LayoutDashboard } from 'lucide-react';
 import Link from 'next/link';
 
@@ -21,22 +21,19 @@ interface RoleGuardProps {
 export default function RoleGuard({ allow, children }: RoleGuardProps) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (isLoading) return; // still hydrating
     if (!user) {
-      router.replace('/login');
+      // Sign in, then come back to the page that was requested.
+      router.replace(`/login?next=${encodeURIComponent(pathname ?? '/dashboard')}`);
       return;
     }
     if (!allow.includes(user.role)) {
-      // Redirect to the user's natural home
-      if (isAdminSection(user.role)) {
-        router.replace('/admin');
-      } else {
-        router.replace('/dashboard');
-      }
+      router.replace(getHomeForRole(user.role));
     }
-  }, [user, isLoading, allow, router]);
+  }, [user, isLoading, allow, router, pathname]);
 
   if (isLoading) {
     return (

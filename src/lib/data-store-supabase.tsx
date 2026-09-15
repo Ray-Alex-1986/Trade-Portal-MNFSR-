@@ -7,14 +7,19 @@ import {
   SyncStatus,
 } from './types';
 import { useAuth } from './auth';
-import { getReviewStage } from './permissions';
+import { resolveReviewStage } from './permissions';
 import { getSupabaseBrowserClient } from './supabase/client';
 import { subscribeToPortalChanges, PortalTable } from './supabase/realtime';
-import { DataStoreContext, MasterCategory, ReviewDecision } from './data-store';
+import {
+  DataStoreContext, DataStoreContextType, MasterCategory, MutationResult, NewUserInput, RegistrationInput, ReviewDecision,
+} from './data-store';
 
 const nowISO = () => new Date().toISOString();
 const localId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 const nullableDate = (value: string | undefined) => value?.trim() || null;
+const ok = <T,>(data?: T): MutationResult<T> => ({ data });
+const fail = <T,>(error: string): MutationResult<T> => ({ error });
+const NOT_CONFIGURED = 'The database connection is not configured.';
 
 const EMPTY_MASTER: Record<MasterCategory, string[]> = {
   products: [], countries: [], provinces: [], ports: [],
@@ -78,12 +83,20 @@ function mapExportRecord(row: Record<string, unknown> & { documents?: Record<str
 }
 
 function groupMaster(rows: { category: string; name: string }[]): Record<MasterCategory, string[]> {
-  const grouped: Record<MasterCategory, string[]> = { ...EMPTY_MASTER };
+  const grouped: Record<MasterCategory, string[]> = {
+    products: [], countries: [], provinces: [], ports: [],
+    complaint_categories: [], document_types: [], roles: [], institutions: [],
+  };
   for (const row of rows) {
     const cat = row.category as MasterCategory;
     if (cat in grouped) grouped[cat].push(row.name);
   }
   return grouped;
+}
+
+async function readError(response: Response, fallback: string): Promise<string> {
+  const body = await response.json().catch(() => ({})) as { error?: string };
+  return body.error || `${fallback} (HTTP ${response.status})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,8 +112,9 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
   });
   const [isLoaded, setIsLoaded] = useState(false);
   const actorRef = useRef<Actor>({ id: 'system', name: 'System', role: 'super_admin' });
-  const roleIdsRef = useRef<Record<string, string>>({});
-  const institutionIdsRef = useRef<Record<string, string>>({});
+  const dataRef = useRef(data);
+
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   useEffect(() => {
     actorRef.current = user
@@ -115,21 +129,12 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
   // -------------------------------------------------------------------------
   // Loaders
   // -------------------------------------------------------------------------
-  const loadLookups = useCallback(async () => {
-    if (!supabase) return;
-    const [{ data: roles }, { data: institutions }] = await Promise.all([
-      supabase.from('roles').select('id, name'),
-      supabase.from('institutions').select('id, name'),
-    ]);
-    roleIdsRef.current = Object.fromEntries((roles ?? []).map(r => [r.name as string, r.id as string]));
-    institutionIdsRef.current = Object.fromEntries((institutions ?? []).map(i => [i.name as string, i.id as string]));
-  }, [supabase]);
-
   const loadUsers = useCallback(async () => {
     if (!supabase) return;
     const { data: rows, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, is_active, last_login, created_at, role:roles(name), institution:institutions(name)');
+      .select('id, email, full_name, is_active, last_login, created_at, role:roles(name), institution:institutions(name)')
+      .order('created_at', { ascending: false });
     if (error) return logError('loadUsers', error);
     setData(prev => ({ ...prev, users: (rows ?? []).map(r => mapProfile(r as ProfileRow)) }));
   }, [supabase]);
@@ -217,13 +222,12 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   const loadAll = useCallback(async () => {
-    await loadLookups();
     await Promise.all([
       loadUsers(), loadCompanies(), loadExportRecords(), loadComplaints(), loadMasterData(),
       loadAuditLogs(), loadNotifications(), loadProvinceSources(), loadProvinceSyncLogs(),
       loadProvinceDataRecords(),
     ]);
-  }, [loadLookups, loadUsers, loadCompanies, loadExportRecords, loadComplaints, loadMasterData,
+  }, [loadUsers, loadCompanies, loadExportRecords, loadComplaints, loadMasterData,
       loadAuditLogs, loadNotifications, loadProvinceSources, loadProvinceSyncLogs, loadProvinceDataRecords]);
 
   const tableLoaders: Record<PortalTable, () => Promise<void>> = {
@@ -266,21 +270,22 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
 
   // Live subscriptions — any DB change refetches the affected table
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase || !user) return;
     return subscribeToPortalChanges(supabase, (table) => {
       void tableLoaders[table]?.();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase]);
+  }, [supabase, user?.id]);
 
   // -------------------------------------------------------------------------
   // Shared write helpers
   // -------------------------------------------------------------------------
-  const audit = useCallback((entry: { action: string; module: string; record_id: string; previous_value?: string; new_value?: string }) => {
+  const audit = useCallback(async (entry: { action: string; module: string; record_id: string; previous_value?: string; new_value?: string }) => {
     if (!supabase) return;
     const actor = actorRef.current;
-    supabase.from('audit_logs').insert({
-      user_id: actor.id === 'system' ? null : actor.id,
+    if (actor.id === 'system') return; // RLS only permits authenticated users to write their own entries
+    const { error } = await supabase.from('audit_logs').insert({
+      user_id: actor.id,
       user_name: actor.name,
       user_role: actor.role,
       action: entry.action,
@@ -288,18 +293,22 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
       record_id: entry.record_id,
       previous_value: entry.previous_value,
       new_value: entry.new_value,
-      ip_address: '127.0.0.1',
-    }).then(({ error }) => logError('audit', error));
-  }, [supabase]);
+      ip_address: 'client',
+    });
+    logError('audit', error);
+    void loadAuditLogs();
+  }, [supabase, loadAuditLogs]);
 
-  const notifyUser = useCallback((userId: string, title: string, message: string, type: Notification['type'], link?: string) => {
+  const notifyUser = useCallback(async (userId: string, title: string, message: string, type: Notification['type'], link?: string) => {
     if (!supabase || !userId || userId === 'system') return;
-    supabase.from('notifications').insert({ user_id: userId, title, message, type, link }).then(({ error }) => logError('notify', error));
+    const { error } = await supabase.from('notifications').insert({ user_id: userId, title, message, type, link });
+    logError('notify', error);
   }, [supabase]);
 
-  const notifySuperAdmins = useCallback((title: string, message: string, type: Notification['type'], link?: string) => {
+  const notifySuperAdmins = useCallback(async (title: string, message: string, type: Notification['type'], link?: string) => {
     if (!supabase) return;
-    supabase.rpc('notify_super_admins', { p_title: title, p_message: message, p_type: type, p_link: link }).then(({ error }) => logError('notifySuperAdmins', error));
+    const { error } = await supabase.rpc('notify_super_admins', { p_title: title, p_message: message, p_type: type, p_link: link });
+    logError('notifySuperAdmins', error);
   }, [supabase]);
 
   const patchState = useCallback((updater: (prev: PortalData) => Partial<PortalData>) => {
@@ -318,127 +327,81 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
   // -------------------------------------------------------------------------
   // Users
   // -------------------------------------------------------------------------
-  const addUser = useCallback((input: { full_name: string; email: string; role: string; institution?: string; password?: string }): User => {
-    const created: User = {
-      id: localId('u'),
-      email: input.email,
-      full_name: input.full_name,
-      role: input.role as UserRole,
-      institution: input.institution || undefined,
-      is_active: true,
-      created_at: nowISO(),
-      last_login: undefined,
-    };
-    patchState(prev => ({ users: [...prev.users, created] }));
-    // Auth user creation requires the service role — server-side route
-    void fetchWithAuth('/api/admin-users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    })
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then(({ user }: { user: User }) => {
-        setData(prev => ({
-          ...prev,
-          users: prev.users.map(u => (u.id === created.id ? { ...user } : u)),
-        }));
-      })
-      .catch(err => {
-        console.error('[addUser]', err);
-        setData(prev => ({ ...prev, users: prev.users.filter(u => u.id !== created.id) }));
+  const addUser = useCallback(async (input: NewUserInput): Promise<MutationResult<User>> => {
+    try {
+      const response = await fetchWithAuth('/api/admin-users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
       });
-    audit({ action: 'Create User', module: 'User Management', record_id: created.email, new_value: `${created.full_name} (${created.role})` });
-    return created;
-  }, [patchState, audit, fetchWithAuth]);
+      if (!response.ok) return fail(await readError(response, 'The user could not be created'));
+      const { user: created } = await response.json() as { user: User };
+      patchState(prev => ({ users: [created, ...prev.users.filter(u => u.id !== created.id)] }));
+      void loadUsers();
+      return ok(created);
+    } catch (error) {
+      console.error('[addUser]', error);
+      return fail('The user management service is unavailable.');
+    }
+  }, [patchState, fetchWithAuth, loadUsers]);
 
-  const updateUser = useCallback((id: string, patch: Partial<User>) => {
+  const updateUser = useCallback(async (id: string, patch: Partial<User>): Promise<MutationResult> => {
+    const previous = dataRef.current.users.find(u => u.id === id);
     patchState(prev => ({ users: prev.users.map(u => (u.id === id ? { ...u, ...patch } : u)) }));
-    void fetchWithAuth('/api/admin-users', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, ...patch }),
-    }).then(r => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    }).catch(error => {
+    try {
+      const response = await fetchWithAuth('/api/admin-users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...patch, institution: patch.institution === undefined ? undefined : (patch.institution || null) }),
+      });
+      if (!response.ok) {
+        void loadUsers();
+        return fail(await readError(response, 'The user could not be updated'));
+      }
+      void loadUsers();
+      void audit({
+        action: 'Update User', module: 'User Management', record_id: previous?.email ?? id,
+        new_value: JSON.stringify(patch).substring(0, 200),
+      });
+      return ok();
+    } catch (error) {
       console.error('[updateUser]', error);
       void loadUsers();
-    });
-    audit({
-      action: 'Update User', module: 'User Management', record_id: id,
-      previous_value: JSON.stringify(patch).substring(0, 200),
-    });
+      return fail('The user management service is unavailable.');
+    }
   }, [patchState, audit, fetchWithAuth, loadUsers]);
 
-  const deleteUser = useCallback((id: string) => {
-    patchState(prev => ({ users: prev.users.filter(u => u.id !== id) }));
-    void fetchWithAuth(`/api/admin-users?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); })
-      .catch(err => { console.error('[deleteUser]', err); void loadUsers(); });
-    audit({ action: 'Delete User', module: 'User Management', record_id: id });
-  }, [patchState, audit, loadUsers, fetchWithAuth]);
+  const deleteUser = useCallback(async (id: string): Promise<MutationResult> => {
+    const previous = dataRef.current.users.find(u => u.id === id);
+    try {
+      const response = await fetchWithAuth(`/api/admin-users?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!response.ok) return fail(await readError(response, 'The user could not be deleted'));
+      patchState(prev => ({ users: prev.users.filter(u => u.id !== id) }));
+      void audit({ action: 'Delete User', module: 'User Management', record_id: previous?.email ?? id, new_value: previous?.full_name });
+      return ok();
+    } catch (error) {
+      console.error('[deleteUser]', error);
+      return fail('The user management service is unavailable.');
+    }
+  }, [patchState, audit, fetchWithAuth]);
 
   // -------------------------------------------------------------------------
   // Registrations
   // -------------------------------------------------------------------------
-  const submitRegistration = useCallback((input: {
-    company: Partial<Company>;
-    representative: { full_name: string; email: string; username: string; password?: string; cnic: string; designation: string; mobile: string };
-    registration_number: string;
-  }): { user: User; company: Company } => {
-    const rep = input.representative;
-    const localUser: User = {
-      id: localId('u'),
-      email: rep.email,
-      full_name: rep.full_name,
-      role: 'exporter',
-      is_active: true,
-      created_at: nowISO(),
-      last_login: undefined,
-    };
-    const localCompany: Company = {
-      id: localId('c'),
-      legal_name: input.company.legal_name || '',
-      trading_name: input.company.trading_name || undefined,
-      company_type: input.company.company_type || 'Private Limited',
-      ntn: input.company.ntn || '',
-      secp_number: input.company.secp_number || '',
-      registration_date: input.company.registration_date || nowISO(),
-      address: input.company.address || '',
-      province: input.company.province || 'Punjab',
-      district: input.company.district || '',
-      city: input.company.city || '',
-      website: input.company.website || undefined,
-      email: input.company.email || rep.email,
-      phone: input.company.phone || rep.mobile,
-      nature_of_business: input.company.nature_of_business || 'Agricultural Export',
-      main_export_categories: input.company.main_export_categories || [],
-      registration_number: input.registration_number,
-      status: 'submitted',
-      tdap_review_status: 'pending' as StageReviewStatus,
-      nafsa_review_status: 'not_initiated' as StageReviewStatus,
-      nadra_status: 'pending',
-      secp_status: 'pending',
-      ntn_status: 'pending',
-      created_at: nowISO(),
-      updated_at: nowISO(),
-      owner_id: localUser.id,
-    };
-    // The full flow is async (signUp → profile → company → notify → signOut)
-    // and is shared with the register page via registerExporter().
-    void import('./registration').then(({ registerExporter }) =>
-      registerExporter(input).then(({ error }) => {
-        if (error) console.error('[submitRegistration]', error);
-      }),
-    );
-    return { user: localUser, company: localCompany };
+  const submitRegistration = useCallback(async (input: RegistrationInput): Promise<MutationResult<{ user: User; company: Company }>> => {
+    const { registerExporter } = await import('./registration');
+    const result = await registerExporter(input);
+    if (result.error || !result.user || !result.company) return fail(result.error || 'Registration could not be submitted.');
+    return ok({ user: result.user, company: result.company });
   }, []);
 
-  const reviewRegistration = useCallback((id: string, decision: ReviewDecision, remarks?: string) => {
-    const company = data.companies.find(c => c.id === id);
-    if (!company) return;
+  const reviewRegistration = useCallback(async (id: string, decision: ReviewDecision, remarks?: string): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const company = dataRef.current.companies.find(c => c.id === id);
+    if (!company) return fail('Registration was not found.');
     const actor = actorRef.current;
-    const stage = getReviewStage(actor.role);
-    if (!stage) return;
+    const stage = resolveReviewStage(actor.role, company.tdap_review_status);
+    if (!stage) return fail('Your role cannot review registrations.');
 
     const oldStatus = company.status;
     let newStatus: Company['status'] = oldStatus;
@@ -470,6 +433,21 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
       else nafsaReview = 'info_requested';
     }
 
+    const { error } = await supabase.from('companies').update({
+      status: newStatus,
+      tdap_review_status: tdapReview,
+      nafsa_review_status: nafsaReview,
+      nadra_status: nadraStatus,
+      secp_status: secpStatus,
+      ntn_status: ntnStatus,
+      updated_by: actor.id,
+      updated_at: nowISO(),
+    }).eq('id', id);
+    if (error) {
+      logError('reviewRegistration', error);
+      return fail(`The decision could not be saved: ${error.message}`);
+    }
+
     patchState(prev => ({
       companies: prev.companies.map(c => c.id === id ? {
         ...c, status: newStatus, tdap_review_status: tdapReview, nafsa_review_status: nafsaReview,
@@ -477,23 +455,11 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
       } : c),
     }));
 
-    if (supabase) {
-      supabase.from('companies').update({
-        status: newStatus,
-        tdap_review_status: tdapReview,
-        nafsa_review_status: nafsaReview,
-        nadra_status: nadraStatus,
-        secp_status: secpStatus,
-        ntn_status: ntnStatus,
-        updated_at: nowISO(),
-      }).eq('id', id).then(({ error }) => logError('reviewRegistration', error));
-    }
-
     const stageLabel = stage === 'tdap' ? 'TDAP' : 'NAFSA';
-    audit({
+    void audit({
       action: `${decision === 'approve' ? 'Approve' : decision === 'reject' ? 'Reject' : 'Request Info'} (${stageLabel})`,
       module: 'Registration', record_id: company.registration_number,
-      previous_value: oldStatus, new_value: newStatus,
+      previous_value: oldStatus, new_value: remarks ? `${newStatus} — ${remarks}` : newStatus,
     });
 
     const notifType: Notification['type'] = decision === 'approve' ? 'success' : decision === 'reject' ? 'error' : 'warning';
@@ -512,26 +478,49 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
       notifTitle = `Additional Information Required (${stageLabel})`;
       notifMsg = `${stageLabel} requires additional information for registration ${company.registration_number}.${remarks ? ` Details: ${remarks}` : ''}`;
     }
-    notifyUser(company.owner_id, notifTitle, notifMsg, notifType, '/dashboard');
-  }, [data.companies, supabase, patchState, audit, notifyUser]);
+    void notifyUser(company.owner_id, notifTitle, notifMsg, notifType, '/dashboard');
+    return ok();
+  }, [supabase, patchState, audit, notifyUser]);
+
+  const resubmitRegistration = useCallback(async (id: string, patch?: Partial<Company>): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const company = dataRef.current.companies.find(c => c.id === id);
+    if (!company) return fail('Registration was not found.');
+    const actor = actorRef.current;
+    if (company.owner_id !== actor.id && actor.role !== 'super_admin') return fail('Only the company owner can resubmit this registration.');
+    if (!['additional_info_required', 'rejected', 'draft'].includes(company.status)) return fail('Only returned or draft registrations can be resubmitted.');
+    const { id: _id, owner_id: _owner, status: _status, created_at: _c, updated_at: _u, ...safePatch } = patch ?? {};
+    const update = { ...safePatch, status: 'submitted', tdap_review_status: 'pending', nafsa_review_status: 'not_initiated', updated_at: nowISO() };
+    const { error } = await supabase.from('companies').update(update).eq('id', id);
+    if (error) return fail(`The registration could not be resubmitted: ${error.message}`);
+    patchState(prev => ({ companies: prev.companies.map(c => c.id === id ? { ...c, ...update } as Company : c) }));
+    void audit({ action: 'Resubmit Registration', module: 'Registration', record_id: company.registration_number, previous_value: company.status, new_value: 'submitted' });
+    void notifySuperAdmins('Registration Resubmitted', `${company.legal_name} (${company.registration_number}) has resubmitted its registration for review.`, 'info', '/admin/reviews');
+    return ok();
+  }, [supabase, patchState, audit, notifySuperAdmins]);
 
   // -------------------------------------------------------------------------
   // Export records
   // -------------------------------------------------------------------------
-  const addExportRecord = useCallback((input: Partial<ExportRecord>): ExportRecord => {
+  const addExportRecord = useCallback(async (input: Partial<ExportRecord>): Promise<MutationResult<ExportRecord>> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
     const actor = actorRef.current;
     const state = dataRef.current;
+    if (!input.product?.trim()) return fail('Product is required.');
+    const myCompany = state.companies.find(c => c.id === input.company_id && c.owner_id === actor.id)
+      ?? state.companies.find(c => c.owner_id === actor.id && c.status === 'approved');
+    if (!myCompany) return fail('An approved company registration is required before adding export records.');
     const maxNum = state.exportRecords.reduce((max, r) => {
       const m = r.consignment_number.match(/(\d+)$/);
       return m ? Math.max(max, Number(m[1])) : max;
     }, 2025000);
-    const myCompany = state.companies.find(c => c.owner_id === actor.id) ?? state.companies[0];
-    const created: ExportRecord = {
-      id: localId('exp'),
-      consignment_number: `EXP-${maxNum + 1}`,
+    const consignment = `EXP-${Math.max(maxNum + 1, Number(String(Date.now()).slice(-7)))}`;
+    const documents = input.documents || [];
+    const row = {
+      consignment_number: consignment,
       exporter_id: actor.id,
-      company_id: myCompany?.id ?? '',
-      product: input.product || '',
+      company_id: myCompany.id,
+      product: input.product.trim(),
       product_category: input.product_category || 'Other Agricultural',
       hs_code: input.hs_code || '9999.99',
       description: input.description || '',
@@ -542,11 +531,11 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
       country_of_origin: 'Pakistan',
       province_of_production: input.province_of_production || 'Punjab',
       district_of_production: input.district_of_production || '',
-      crop_year: input.crop_year,
+      crop_year: input.crop_year ?? null,
       batch_number: input.batch_number || '',
       packaging_type: input.packaging_type || 'Carton Boxes',
       num_packages: input.num_packages ?? 0,
-      intended_shipment_date: input.intended_shipment_date || '',
+      intended_shipment_date: nullableDate(input.intended_shipment_date),
       buyer_name: input.buyer_name || '',
       buyer_company: input.buyer_company || '',
       buyer_country: input.buyer_country || '',
@@ -562,115 +551,91 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
       shipping_company: input.shipping_company || '',
       container_number: input.container_number || '',
       bill_of_lading: input.bill_of_lading || '',
-      expected_departure: input.expected_departure || '',
-      expected_arrival: input.expected_arrival || '',
+      expected_departure: nullableDate(input.expected_departure),
+      expected_arrival: nullableDate(input.expected_arrival),
       status: input.status || 'submitted',
-      documents: input.documents || [],
-      created_at: nowISO(),
+      tdap_review_status: 'pending',
+      nafsa_review_status: 'not_initiated',
+      created_by: actor.id,
+      updated_by: actor.id,
+    };
+
+    const { data: inserted, error } = await supabase.from('export_records').insert(row).select().single();
+    if (error || !inserted) {
+      console.error('[addExportRecord]', error?.message ?? 'The export record was not created.');
+      return fail(`The export record could not be saved: ${error?.message ?? 'unknown error'}`);
+    }
+
+    const persistedRecord: ExportRecord = { ...(inserted as unknown as ExportRecord), documents: [] };
+    if (documents.length) {
+      const { data: documentRows, error: documentsError } = await supabase
+        .from('documents')
+        .insert(documents.map(({ id: _documentId, record_id: _recordId, ...document }) => ({
+          ...document,
+          record_id: persistedRecord.id,
+          company_id: persistedRecord.company_id,
+          uploaded_by: actor.id,
+        })))
+        .select();
+      if (documentsError) console.error('[addExportRecord:documents]', documentsError.message);
+      else persistedRecord.documents = (documentRows ?? []) as ExportRecord['documents'];
+    }
+
+    patchState(prev => ({ exportRecords: [persistedRecord, ...prev.exportRecords.filter(r => r.id !== persistedRecord.id)] }));
+    void audit({
+      action: 'Create Record', module: 'Export Records', record_id: persistedRecord.consignment_number,
+      new_value: `${persistedRecord.product} → ${persistedRecord.destination_country} (${persistedRecord.status})`,
+    });
+    void notifyUser(actor.id, 'Export Record Submitted', `Your export record ${persistedRecord.consignment_number} has been submitted and is pending review.`, 'info', '/dashboard/exports');
+    void notifySuperAdmins('New Export Record', `${myCompany.legal_name} submitted ${persistedRecord.consignment_number} (${persistedRecord.product} → ${persistedRecord.destination_country}).`, 'info', '/admin/reviews');
+    return ok(persistedRecord);
+  }, [supabase, patchState, audit, notifyUser, notifySuperAdmins]);
+
+  const updateExportRecord = useCallback(async (id: string, patch: Partial<ExportRecord>): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const record = dataRef.current.exportRecords.find(r => r.id === id);
+    if (!record) return fail('Export record was not found.');
+    const { documents: _docs, id: _id, created_at: _c, updated_at: _u, ...rest } = patch;
+    const resubmitted = patch.status === 'submitted' && record.status !== 'submitted';
+    const update: Record<string, unknown> = {
+      ...rest,
+      ...(rest.intended_shipment_date !== undefined ? { intended_shipment_date: nullableDate(rest.intended_shipment_date) } : {}),
+      ...(rest.expected_departure !== undefined ? { expected_departure: nullableDate(rest.expected_departure) } : {}),
+      ...(rest.expected_arrival !== undefined ? { expected_arrival: nullableDate(rest.expected_arrival) } : {}),
+      ...(resubmitted ? { tdap_review_status: 'pending', nafsa_review_status: 'not_initiated' } : {}),
+      updated_by: actorRef.current.id,
       updated_at: nowISO(),
     };
-    patchState(prev => ({ exportRecords: [created, ...prev.exportRecords] }));
-
-    if (supabase) {
-      void (async () => {
-        const {
-          id: _temporaryId,
-          documents,
-          created_at: _createdAt,
-          updated_at: _updatedAt,
-          ...row
-        } = created;
-        const { data: inserted, error } = await supabase
-          .from('export_records')
-          .insert({
-            ...row,
-            exporter_id: actor.id,
-            intended_shipment_date: nullableDate(row.intended_shipment_date),
-            expected_departure: nullableDate(row.expected_departure),
-            expected_arrival: nullableDate(row.expected_arrival),
-          })
-          .select()
-          .single();
-
-        if (error || !inserted) {
-          console.error('[addExportRecord]', error?.message ?? 'The export record was not created.');
-          setData(prev => ({ ...prev, exportRecords: prev.exportRecords.filter(record => record.id !== created.id) }));
-          return;
-        }
-
-        const persistedRecord: ExportRecord = {
-          ...(inserted as unknown as ExportRecord),
-          documents: [],
-        };
-        let persistedDocuments: ExportRecord['documents'] = [];
-
-        if (documents.length) {
-          const { data: documentRows, error: documentsError } = await supabase
-            .from('documents')
-            .insert(documents.map(({ id: _documentId, record_id: _recordId, ...document }) => ({
-              ...document,
-              record_id: persistedRecord.id,
-              company_id: persistedRecord.company_id,
-              uploaded_by: actor.id,
-            })))
-            .select();
-          if (documentsError) {
-            console.error('[addExportRecord:documents]', documentsError.message);
-          } else {
-            persistedDocuments = (documentRows ?? []) as ExportRecord['documents'];
-          }
-        }
-
-        setData(prev => ({
-          ...prev,
-          exportRecords: prev.exportRecords.map(record => record.id === created.id
-            ? { ...persistedRecord, documents: persistedDocuments }
-            : record),
-        }));
-        audit({
-          action: 'Create Record',
-          module: 'Export Records',
-          record_id: persistedRecord.consignment_number,
-          new_value: `${persistedRecord.product} → ${persistedRecord.destination_country} (${persistedRecord.status})`,
-        });
-        notifyUser(actor.id, 'Export Record Submitted', `Your export record ${persistedRecord.consignment_number} has been submitted and is pending review.`, 'info', '/dashboard/exports');
-      })();
-    }
-
-    return created;
-  }, [supabase, patchState, audit, notifyUser]);
-
-  const updateExportRecord = useCallback((id: string, patch: Partial<ExportRecord>) => {
+    const { error } = await supabase.from('export_records').update(update).eq('id', id);
+    if (error) return fail(`The export record could not be updated: ${error.message}`);
     patchState(prev => ({
-      exportRecords: prev.exportRecords.map(r => r.id === id ? { ...r, ...patch, updated_at: nowISO() } : r),
+      exportRecords: prev.exportRecords.map(r => r.id === id ? { ...r, ...patch, ...(resubmitted ? { tdap_review_status: 'pending', nafsa_review_status: 'not_initiated' } : {}), updated_at: nowISO() } : r),
     }));
-    if (!supabase) return;
-    const { documents: _docs, id: _id, ...rest } = patch;
-    if (Object.keys(rest).length) {
-      supabase.from('export_records').update({ ...rest, updated_at: nowISO() }).eq('id', id)
-        .then(({ error }) => logError('updateExportRecord', error));
-    }
-    const record = data.exportRecords.find(r => r.id === id);
-    if (record) {
-      audit({ action: 'Update Record', module: 'Export Records', record_id: record.consignment_number, new_value: JSON.stringify(patch).substring(0, 200) });
-      notifyUser(record.exporter_id, 'Export Record Updated', `Your export record ${record.consignment_number} has been updated${patch.status === 'submitted' ? ' and resubmitted for review' : ''}.`, 'info', '/dashboard/exports');
-    }
-  }, [supabase, patchState, audit, notifyUser, data.exportRecords]);
+    void audit({ action: resubmitted ? 'Resubmit Record' : 'Update Record', module: 'Export Records', record_id: record.consignment_number, new_value: JSON.stringify(rest).substring(0, 200) });
+    void notifyUser(record.exporter_id, 'Export Record Updated', `Your export record ${record.consignment_number} has been updated${resubmitted ? ' and resubmitted for review' : ''}.`, 'info', '/dashboard/exports');
+    if (resubmitted) void notifySuperAdmins('Export Record Resubmitted', `${record.consignment_number} has been corrected and resubmitted for review.`, 'info', '/admin/reviews');
+    return ok();
+  }, [supabase, patchState, audit, notifyUser, notifySuperAdmins]);
 
-  const deleteExportRecord = useCallback((id: string) => {
-    const record = data.exportRecords.find(r => r.id === id);
+  const deleteExportRecord = useCallback(async (id: string): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const record = dataRef.current.exportRecords.find(r => r.id === id);
+    if (!record) return fail('Export record was not found.');
+    const { error, count } = await supabase.from('export_records').delete({ count: 'exact' }).eq('id', id);
+    if (error) return fail(`The export record could not be deleted: ${error.message}`);
+    if (count === 0) return fail('You do not have permission to delete this export record.');
     patchState(prev => ({ exportRecords: prev.exportRecords.filter(r => r.id !== id) }));
-    if (!supabase) return;
-    supabase.from('export_records').delete().eq('id', id).then(({ error }) => logError('deleteExportRecord', error));
-    if (record) audit({ action: 'Delete Record', module: 'Export Records', record_id: record.consignment_number, new_value: `${record.product} → ${record.destination_country}` });
-  }, [supabase, patchState, audit, data.exportRecords]);
+    void audit({ action: 'Delete Record', module: 'Export Records', record_id: record.consignment_number, new_value: `${record.product} → ${record.destination_country}` });
+    return ok();
+  }, [supabase, patchState, audit]);
 
-  const reviewExportRecord = useCallback((id: string, decision: ReviewDecision, remarks?: string) => {
-    const record = data.exportRecords.find(r => r.id === id);
-    if (!record) return;
+  const reviewExportRecord = useCallback(async (id: string, decision: ReviewDecision, remarks?: string): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const record = dataRef.current.exportRecords.find(r => r.id === id);
+    if (!record) return fail('Export record was not found.');
     const actor = actorRef.current;
-    const stage = getReviewStage(actor.role);
-    if (!stage) return;
+    const stage = resolveReviewStage(actor.role, record.tdap_review_status);
+    if (!stage) return fail('Your role cannot review export records.');
 
     const oldStatus = record.status;
     let newStatus: ExportRecord['status'] = oldStatus;
@@ -696,32 +661,32 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
       else nafsaReview = 'info_requested';
     }
 
+    const reviewerField = stage === 'tdap' ? 'tdap_reviewer_id' : 'nafsa_reviewer_id';
+    const reviewDateField = stage === 'tdap' ? 'tdap_review_date' : 'nafsa_review_date';
+    const remarksField = stage === 'tdap' ? 'tdap_remarks' : 'nafsa_remarks';
+    const { error } = await supabase.from('export_records').update({
+      status: newStatus,
+      tdap_review_status: tdapReview,
+      nafsa_review_status: nafsaReview,
+      [reviewerField]: actor.id,
+      [reviewDateField]: nowISO(),
+      ...(remarks ? { [remarksField]: remarks } : {}),
+      updated_by: actor.id,
+      updated_at: nowISO(),
+    }).eq('id', id);
+    if (error) return fail(`The decision could not be saved: ${error.message}`);
+
     patchState(prev => ({
       exportRecords: prev.exportRecords.map(r => r.id === id ? {
         ...r, status: newStatus, tdap_review_status: tdapReview, nafsa_review_status: nafsaReview, updated_at: nowISO(),
       } : r),
     }));
 
-    if (supabase) {
-      const reviewerField = stage === 'tdap' ? 'tdap_reviewer_id' : 'nafsa_reviewer_id';
-      const reviewDateField = stage === 'tdap' ? 'tdap_review_date' : 'nafsa_review_date';
-      const remarksField = stage === 'tdap' ? 'tdap_remarks' : 'nafsa_remarks';
-      supabase.from('export_records').update({
-        status: newStatus,
-        tdap_review_status: tdapReview,
-        nafsa_review_status: nafsaReview,
-        [reviewerField]: actor.id,
-        [reviewDateField]: nowISO(),
-        ...(remarks ? { [remarksField]: remarks } : {}),
-        updated_at: nowISO(),
-      }).eq('id', id).then(({ error }) => logError('reviewExportRecord', error));
-    }
-
     const stageLabel = stage === 'tdap' ? 'TDAP' : 'NAFSA';
-    audit({
+    void audit({
       action: `${decision === 'approve' ? 'Approve' : decision === 'reject' ? 'Reject' : 'Request Info'} (${stageLabel})`,
       module: 'Export Records', record_id: record.consignment_number,
-      previous_value: oldStatus, new_value: newStatus,
+      previous_value: oldStatus, new_value: remarks ? `${newStatus} — ${remarks}` : newStatus,
     });
 
     const notifType: Notification['type'] = decision === 'approve' ? 'success' : decision === 'reject' ? 'error' : 'warning';
@@ -740,13 +705,15 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
       notifTitle = `Additional Information Required (${stageLabel})`;
       notifMsg = `${stageLabel} requires additional information for export record ${record.consignment_number}.${remarks ? ` Details: ${remarks}` : ''}`;
     }
-    notifyUser(record.exporter_id, notifTitle, notifMsg, notifType, '/dashboard/exports');
-  }, [data.exportRecords, supabase, patchState, audit, notifyUser]);
+    void notifyUser(record.exporter_id, notifTitle, notifMsg, notifType, '/dashboard/exports');
+    return ok();
+  }, [supabase, patchState, audit, notifyUser]);
 
   // -------------------------------------------------------------------------
   // Complaints
   // -------------------------------------------------------------------------
-  const addComplaint = useCallback((input: Partial<Complaint> & { tracking_number: string }): Complaint => {
+  const addComplaint = useCallback(async (input: Partial<Complaint> & { tracking_number: string }): Promise<MutationResult<Complaint>> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
     const created: Complaint = {
       id: localId('comp'),
       tracking_number: input.tracking_number,
@@ -775,250 +742,256 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
       created_at: nowISO(),
       updated_at: nowISO(),
     };
-    patchState(prev => ({ complaints: [created, ...prev.complaints] }));
-    if (supabase) {
-      // RPC inserts the complaint + super-admin notification + audit log atomically
-      supabase.rpc('submit_public_complaint', {
-        payload: {
-          tracking_number: created.tracking_number,
-          complainant_type: created.complainant_type,
-          full_name: created.full_name,
-          email: created.email,
-          phone: created.phone,
-          company_name: created.company_name ?? null,
-          country: created.country,
-          exporter_company: created.exporter_company ?? null,
-          export_registration_number: created.export_registration_number ?? null,
-          export_record_number: created.export_record_number ?? null,
-          product: created.product ?? null,
-          category: created.category,
-          subject: created.subject,
-          description: created.description,
-          incident_date: created.incident_date || null,
-          preferred_contact: created.preferred_contact,
-          priority: created.priority,
-        },
-      }).then(({ error }) => {
-        if (error) {
-          console.error('[addComplaint]', error.message);
-          setData(prev => ({ ...prev, complaints: prev.complaints.filter(c => c.id !== created.id) }));
-        }
-      });
+    // RPC inserts the complaint + super-admin notification + audit log atomically
+    const { data: result, error } = await supabase.rpc('submit_public_complaint', {
+      payload: {
+        tracking_number: created.tracking_number,
+        complainant_type: created.complainant_type,
+        full_name: created.full_name,
+        email: created.email,
+        phone: created.phone,
+        company_name: created.company_name ?? null,
+        country: created.country,
+        exporter_company: created.exporter_company ?? null,
+        export_registration_number: created.export_registration_number ?? null,
+        export_record_number: created.export_record_number ?? null,
+        product: created.product ?? null,
+        category: created.category,
+        subject: created.subject,
+        description: created.description,
+        incident_date: created.incident_date || null,
+        preferred_contact: created.preferred_contact,
+        priority: created.priority,
+      },
+    });
+    if (error) {
+      console.error('[addComplaint]', error.message);
+      return fail(`The complaint could not be submitted: ${error.message}`);
     }
-    return created;
-  }, [supabase, patchState]);
+    const persistedId = (result as { id?: string } | null)?.id;
+    const persisted = { ...created, id: persistedId || created.id };
+    patchState(prev => ({ complaints: [persisted, ...prev.complaints] }));
+    void loadComplaints();
+    return ok(persisted);
+  }, [supabase, patchState, loadComplaints]);
 
-  const updateComplaint = useCallback((id: string, patch: Partial<Complaint>) => {
-    patchState(prev => ({
-      complaints: prev.complaints.map(c => c.id === id ? { ...c, ...patch, updated_at: nowISO() } : c),
-    }));
-    if (!supabase) return;
-    const { id: _id, ...rest } = patch;
-    if (Object.keys(rest).length) {
-      supabase.from('complaints').update({ ...rest, updated_at: nowISO() }).eq('id', id)
-        .then(({ error }) => logError('updateComplaint', error));
-    }
-  }, [supabase, patchState]);
+  const updateComplaint = useCallback(async (id: string, patch: Partial<Complaint>): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const complaint = dataRef.current.complaints.find(c => c.id === id);
+    if (!complaint) return fail('Complaint was not found.');
+    const { id: _id, created_at: _c, updated_at: _u, ...rest } = patch;
+    if (!Object.keys(rest).length) return ok();
+    const { error } = await supabase.from('complaints').update({ ...rest, updated_by: actorRef.current.id, updated_at: nowISO() }).eq('id', id);
+    if (error) return fail(`The complaint could not be updated: ${error.message}`);
+    patchState(prev => ({ complaints: prev.complaints.map(c => c.id === id ? { ...c, ...patch, updated_at: nowISO() } : c) }));
+    void audit({ action: 'Update Complaint', module: 'Complaints', record_id: complaint.tracking_number, new_value: JSON.stringify(rest).substring(0, 200) });
+    return ok();
+  }, [supabase, patchState, audit]);
 
-  const resolveComplaint = useCallback((id: string, resolutionSummary: string) => {
-    const complaint = data.complaints.find(c => c.id === id);
-    if (!complaint) return;
+  const resolveComplaint = useCallback(async (id: string, resolutionSummary: string): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const complaint = dataRef.current.complaints.find(c => c.id === id);
+    if (!complaint) return fail('Complaint was not found.');
     const resolvedAt = nowISO();
+    const { error } = await supabase.from('complaints').update({
+      status: 'resolved', resolution_summary: resolutionSummary, resolved_at: resolvedAt, updated_by: actorRef.current.id, updated_at: resolvedAt,
+    }).eq('id', id);
+    if (error) return fail(`The complaint could not be resolved: ${error.message}`);
     patchState(prev => ({
       complaints: prev.complaints.map(c => c.id === id ? {
         ...c, status: 'resolved', resolution_summary: resolutionSummary, resolved_at: resolvedAt, updated_at: resolvedAt,
       } : c),
     }));
-    if (supabase) {
-      supabase.from('complaints').update({
-        status: 'resolved', resolution_summary: resolutionSummary, resolved_at: resolvedAt, updated_at: resolvedAt,
-      }).eq('id', id).then(({ error }) => logError('resolveComplaint', error));
-    }
-    audit({ action: 'Resolve Complaint', module: 'Complaints', record_id: complaint.tracking_number, previous_value: complaint.status, new_value: 'resolved' });
-    notifySuperAdmins('Complaint Resolved', `Complaint ${complaint.tracking_number} has been resolved.`, 'success', '/admin/reviews');
-  }, [data.complaints, supabase, patchState, audit, notifySuperAdmins]);
+    void audit({ action: 'Resolve Complaint', module: 'Complaints', record_id: complaint.tracking_number, previous_value: complaint.status, new_value: 'resolved' });
+    void notifySuperAdmins('Complaint Resolved', `Complaint ${complaint.tracking_number} has been resolved.`, 'success', '/admin/reviews');
+    const complainant = dataRef.current.users.find(u => u.email.toLowerCase() === complaint.email.toLowerCase());
+    if (complainant) void notifyUser(complainant.id, 'Complaint Resolved', `Your complaint ${complaint.tracking_number} has been resolved. ${resolutionSummary}`, 'success', '/dashboard/complaints');
+    return ok();
+  }, [supabase, patchState, audit, notifySuperAdmins, notifyUser]);
 
-  const escalateComplaint = useCallback((id: string) => {
-    const complaint = data.complaints.find(c => c.id === id);
-    if (!complaint) return;
+  const escalateComplaint = useCallback(async (id: string): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const complaint = dataRef.current.complaints.find(c => c.id === id);
+    if (!complaint) return fail('Complaint was not found.');
     const newLevel = (complaint.escalation_level || 0) + 1;
+    const { error } = await supabase.from('complaints').update({ status: 'escalated', escalation_level: newLevel, updated_by: actorRef.current.id, updated_at: nowISO() }).eq('id', id);
+    if (error) return fail(`The complaint could not be escalated: ${error.message}`);
     patchState(prev => ({
-      complaints: prev.complaints.map(c => c.id === id ? {
-        ...c, status: 'escalated', escalation_level: newLevel, updated_at: nowISO(),
-      } : c),
+      complaints: prev.complaints.map(c => c.id === id ? { ...c, status: 'escalated', escalation_level: newLevel, updated_at: nowISO() } : c),
     }));
-    if (supabase) {
-      supabase.from('complaints').update({ status: 'escalated', escalation_level: newLevel, updated_at: nowISO() })
-        .eq('id', id).then(({ error }) => logError('escalateComplaint', error));
-    }
-    audit({ action: 'Escalate Complaint', module: 'Complaints', record_id: complaint.tracking_number, previous_value: complaint.status, new_value: 'escalated' });
-    notifySuperAdmins('Complaint Escalated', `Complaint ${complaint.tracking_number} has been escalated to level ${newLevel}.`, 'warning', '/admin/reviews');
-  }, [data.complaints, supabase, patchState, audit, notifySuperAdmins]);
+    void audit({ action: 'Escalate Complaint', module: 'Complaints', record_id: complaint.tracking_number, previous_value: complaint.status, new_value: 'escalated' });
+    void notifySuperAdmins('Complaint Escalated', `Complaint ${complaint.tracking_number} has been escalated to level ${newLevel}.`, 'warning', '/admin/reviews');
+    return ok();
+  }, [supabase, patchState, audit, notifySuperAdmins]);
 
-  const addComplaintNote = useCallback((id: string, note: string) => {
-    const complaint = data.complaints.find(c => c.id === id);
-    if (!complaint) return;
+  const addComplaintNote = useCallback(async (id: string, note: string): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const complaint = dataRef.current.complaints.find(c => c.id === id);
+    if (!complaint) return fail('Complaint was not found.');
     const actor = actorRef.current;
     const entry = `[${new Date().toLocaleString()}] ${actor.name}: ${note}`;
     const newNotes = complaint.internal_notes ? `${complaint.internal_notes}\n${entry}` : entry;
+    const { error } = await supabase.from('complaints').update({ internal_notes: newNotes, updated_by: actor.id, updated_at: nowISO() }).eq('id', id);
+    if (error) return fail(`The note could not be saved: ${error.message}`);
     patchState(prev => ({
       complaints: prev.complaints.map(c => c.id === id ? { ...c, internal_notes: newNotes, updated_at: nowISO() } : c),
     }));
-    if (supabase) {
-      supabase.from('complaints').update({ internal_notes: newNotes, updated_at: nowISO() })
-        .eq('id', id).then(({ error }) => logError('addComplaintNote', error));
-    }
-    audit({ action: 'Add Note', module: 'Complaints', record_id: complaint.tracking_number, new_value: note });
-  }, [data.complaints, supabase, patchState, audit]);
+    void audit({ action: 'Add Note', module: 'Complaints', record_id: complaint.tracking_number, new_value: note });
+    return ok();
+  }, [supabase, patchState, audit]);
 
   // -------------------------------------------------------------------------
   // Master data
   // -------------------------------------------------------------------------
-  const addMasterItem = useCallback((category: MasterCategory, value: string) => {
-    patchState(prev => ({ masterItems: { ...prev.masterItems, [category]: [...(prev.masterItems[category] || []), value] } }));
-    if (supabase) {
-      supabase.from('master_data').insert({ category, name: value }).then(({ error }) => logError('addMasterItem', error));
-    }
-    audit({ action: 'Add Master Data Item', module: 'Master Data', record_id: category, new_value: value });
+  const addMasterItem = useCallback(async (category: MasterCategory, value: string): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const trimmed = value.trim();
+    if (!trimmed) return fail('Enter a value.');
+    const sortOrder = (dataRef.current.masterItems[category]?.length ?? 0) + 1;
+    const { error } = await supabase.from('master_data').insert({ category, name: trimmed, sort_order: sortOrder });
+    if (error) return fail(`The item could not be added: ${error.message}`);
+    patchState(prev => ({ masterItems: { ...prev.masterItems, [category]: [...(prev.masterItems[category] || []), trimmed] } }));
+    void audit({ action: 'Add Master Data Item', module: 'Master Data', record_id: category, new_value: trimmed });
+    return ok();
   }, [supabase, patchState, audit]);
 
-  const updateMasterItem = useCallback((category: MasterCategory, index: number, value: string) => {
-    const old = data.masterItems[category]?.[index];
-    if (old === undefined) return;
+  const updateMasterItem = useCallback(async (category: MasterCategory, index: number, value: string): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const old = dataRef.current.masterItems[category]?.[index];
+    if (old === undefined) return fail('Master-data item was not found.');
+    const trimmed = value.trim();
+    if (!trimmed) return fail('Enter a value.');
+    const { error } = await supabase.from('master_data').update({ name: trimmed, updated_at: nowISO() }).eq('category', category).eq('name', old);
+    if (error) return fail(`The item could not be updated: ${error.message}`);
     patchState(prev => ({
-      masterItems: { ...prev.masterItems, [category]: (prev.masterItems[category] || []).map((item, i) => i === index ? value : item) },
+      masterItems: { ...prev.masterItems, [category]: (prev.masterItems[category] || []).map((item, i) => i === index ? trimmed : item) },
     }));
-    if (supabase) {
-      supabase.from('master_data').update({ name: value }).eq('category', category).eq('name', old)
-        .then(({ error }) => logError('updateMasterItem', error));
-    }
-    audit({ action: 'Update Master Data Item', module: 'Master Data', record_id: category, previous_value: old, new_value: value });
-  }, [data.masterItems, supabase, patchState, audit]);
+    void audit({ action: 'Update Master Data Item', module: 'Master Data', record_id: category, previous_value: old, new_value: trimmed });
+    return ok();
+  }, [supabase, patchState, audit]);
 
-  const deleteMasterItem = useCallback((category: MasterCategory, index: number) => {
-    const old = data.masterItems[category]?.[index];
-    if (old === undefined) return;
+  const deleteMasterItem = useCallback(async (category: MasterCategory, index: number): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const old = dataRef.current.masterItems[category]?.[index];
+    if (old === undefined) return fail('Master-data item was not found.');
+    const { error } = await supabase.from('master_data').delete().eq('category', category).eq('name', old);
+    if (error) return fail(`The item could not be deleted: ${error.message}`);
     patchState(prev => ({
       masterItems: { ...prev.masterItems, [category]: (prev.masterItems[category] || []).filter((_, i) => i !== index) },
     }));
-    if (supabase) {
-      supabase.from('master_data').delete().eq('category', category).eq('name', old)
-        .then(({ error }) => logError('deleteMasterItem', error));
-    }
-    audit({ action: 'Delete Master Data Item', module: 'Master Data', record_id: category, previous_value: old });
-  }, [data.masterItems, supabase, patchState, audit]);
+    void audit({ action: 'Delete Master Data Item', module: 'Master Data', record_id: category, previous_value: old });
+    return ok();
+  }, [supabase, patchState, audit]);
 
   // -------------------------------------------------------------------------
   // Misc
   // -------------------------------------------------------------------------
-  const markAllNotificationsRead = useCallback(() => {
-    const ids = data.notifications.filter(n => !n.is_read).map(n => n.id);
-    patchState(prev => ({ notifications: prev.notifications.map(n => ({ ...n, is_read: true })) }));
-    if (supabase && ids.length) {
-      supabase.from('notifications').update({ is_read: true }).in('id', ids)
-        .then(({ error }) => logError('markAllNotificationsRead', error));
-    }
-  }, [data.notifications, supabase, patchState]);
+  const markAllNotificationsRead = useCallback(async (): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const actor = actorRef.current;
+    const ids = dataRef.current.notifications.filter(n => !n.is_read && n.user_id === actor.id).map(n => n.id);
+    if (!ids.length) return ok();
+    const { error } = await supabase.from('notifications').update({ is_read: true }).in('id', ids);
+    if (error) return fail(`Notifications could not be updated: ${error.message}`);
+    patchState(prev => ({ notifications: prev.notifications.map(n => ids.includes(n.id) ? { ...n, is_read: true } : n) }));
+    return ok();
+  }, [supabase, patchState]);
 
-  const resetData = useCallback(() => {
-    void (async () => {
-      try {
-        const res = await fetchWithAuth('/api/reset-demo', { method: 'POST' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        await loadAll();
-      } catch (err) {
-        console.error('[resetData]', err);
-      }
-    })();
+  const resetData = useCallback(async (): Promise<MutationResult> => {
+    try {
+      const res = await fetchWithAuth('/api/reset-demo', { method: 'POST' });
+      if (!res.ok) return fail(await readError(res, 'The demo reset could not be completed'));
+      await loadAll();
+      return ok();
+    } catch (err) {
+      console.error('[resetData]', err);
+      return fail('The demo reset service is unavailable.');
+    }
   }, [loadAll, fetchWithAuth]);
+
+  const refresh = useCallback(async () => {
+    await loadAll();
+  }, [loadAll]);
 
   // -------------------------------------------------------------------------
   // Province API sources
   // -------------------------------------------------------------------------
-  const addProvinceApiSource = useCallback((input: Partial<ProvinceApiSource>): ProvinceApiSource => {
-    const created: ProvinceApiSource = {
-      id: localId('pas'),
-      name: input.name || 'New API Source',
+  const addProvinceApiSource = useCallback(async (input: Partial<ProvinceApiSource>): Promise<MutationResult<ProvinceApiSource>> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    if (!input.name?.trim() || !input.api_url?.trim()) return fail('Source name and API URL are required.');
+    const row = {
+      name: input.name.trim(),
       province: input.province || 'Punjab',
       system_name: input.system_name || '',
-      api_url: input.api_url || '',
-      api_key: input.api_key,
+      api_url: input.api_url.trim(),
+      api_key: input.api_key || null,
       cron_interval: input.cron_interval || 'daily',
-      cron_expression: input.cron_expression,
+      cron_expression: input.cron_expression || null,
       is_active: input.is_active ?? true,
       total_records_pulled: 0,
-      created_at: nowISO(),
-      updated_at: nowISO(),
       created_by: actorRef.current.id,
     };
-    patchState(prev => ({ provinceApiSources: [...prev.provinceApiSources, created] }));
-    if (supabase) {
-      const { id: _id, last_sync_at: _l, last_sync_status: _ls, last_sync_records: _lr, last_sync_error: _le, ...row } = created as unknown as Record<string, unknown>;
-      supabase.from('province_api_sources').insert(row).then(({ error }) => {
-        if (error) {
-          console.error('[addProvinceApiSource]', error.message);
-          setData(prev => ({ ...prev, provinceApiSources: prev.provinceApiSources.filter(s => s.id !== created.id) }));
-        }
-      });
-    }
-    audit({ action: 'Create API Source', module: 'Province Integrations', record_id: created.id, new_value: `${created.name} (${created.province}) — ${created.api_url}` });
-    return created;
+    const { data: inserted, error } = await supabase.from('province_api_sources').insert(row).select().single();
+    if (error || !inserted) return fail(`The API source could not be saved: ${error?.message ?? 'unknown error'}`);
+    const created = inserted as unknown as ProvinceApiSource;
+    patchState(prev => ({ provinceApiSources: [...prev.provinceApiSources.filter(s => s.id !== created.id), created] }));
+    void audit({ action: 'Create API Source', module: 'Province Integrations', record_id: created.id, new_value: `${created.name} (${created.province}) — ${created.api_url}` });
+    return ok(created);
   }, [supabase, patchState, audit]);
 
-  const updateProvinceApiSource = useCallback((id: string, patch: Partial<ProvinceApiSource>) => {
+  const updateProvinceApiSource = useCallback(async (id: string, patch: Partial<ProvinceApiSource>): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const { id: _id, created_at: _c, created_by: _cb, total_records_pulled: _t, last_sync_at: _l, last_sync_status: _ls, last_sync_records: _lr, last_sync_error: _le, ...rest } = patch as Record<string, unknown>;
+    if (!Object.keys(rest).length) return ok();
+    const { error } = await supabase.from('province_api_sources').update({ ...rest, updated_at: nowISO() }).eq('id', id);
+    if (error) return fail(`The API source could not be updated: ${error.message}`);
     patchState(prev => ({
       provinceApiSources: prev.provinceApiSources.map(s => s.id === id ? { ...s, ...patch, updated_at: nowISO() } : s),
     }));
-    if (!supabase) return;
-    const { id: _id, created_at: _c, created_by: _cb, total_records_pulled: _t, last_sync_at: _l, last_sync_status: _ls, last_sync_records: _lr, last_sync_error: _le, ...rest } = patch as Record<string, unknown>;
-    if (Object.keys(rest).length) {
-      supabase.from('province_api_sources').update({ ...rest, updated_at: nowISO() }).eq('id', id)
-        .then(({ error }) => logError('updateProvinceApiSource', error));
-    }
-    audit({ action: 'Update API Source', module: 'Province Integrations', record_id: id, new_value: JSON.stringify(patch).substring(0, 200) });
+    void audit({ action: 'Update API Source', module: 'Province Integrations', record_id: id, new_value: JSON.stringify(patch).substring(0, 200) });
+    return ok();
   }, [supabase, patchState, audit]);
 
-  const deleteProvinceApiSource = useCallback((id: string) => {
-    const source = data.provinceApiSources.find(s => s.id === id);
+  const deleteProvinceApiSource = useCallback(async (id: string): Promise<MutationResult> => {
+    if (!supabase) return fail(NOT_CONFIGURED);
+    const source = dataRef.current.provinceApiSources.find(s => s.id === id);
+    const { error } = await supabase.from('province_api_sources').delete().eq('id', id);
+    if (error) return fail(`The API source could not be deleted: ${error.message}`);
     patchState(prev => ({
       provinceApiSources: prev.provinceApiSources.filter(s => s.id !== id),
       provinceSyncLogs: prev.provinceSyncLogs.filter(l => l.source_id !== id),
       provinceDataRecords: prev.provinceDataRecords.filter(r => r.source_id !== id),
     }));
-    if (supabase) {
-      supabase.from('province_api_sources').delete().eq('id', id).then(({ error }) => logError('deleteProvinceApiSource', error));
-    }
-    if (source) audit({ action: 'Delete API Source', module: 'Province Integrations', record_id: id, previous_value: source.name });
-  }, [data.provinceApiSources, supabase, patchState, audit]);
+    if (source) void audit({ action: 'Delete API Source', module: 'Province Integrations', record_id: id, previous_value: source.name });
+    return ok();
+  }, [supabase, patchState, audit]);
 
-  const triggerProvinceSync = useCallback((sourceId: string) => {
+  const triggerProvinceSync = useCallback(async (sourceId: string): Promise<MutationResult> => {
     // Mark as running optimistically; the API route performs the real HTTP call
     // and persists results — realtime then refetches the true state.
     patchState(prev => ({
       provinceApiSources: prev.provinceApiSources.map(s => s.id === sourceId ? { ...s, last_sync_status: 'running' as SyncStatus } : s),
     }));
-    void fetchWithAuth('/api/province-sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceId }),
-    })
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); })
-      .catch(err => {
-        console.error('[triggerProvinceSync]', err);
-        void loadProvinceSources();
-        void loadProvinceSyncLogs();
+    const source = dataRef.current.provinceApiSources.find(s => s.id === sourceId);
+    if (source) void audit({ action: 'Trigger Sync', module: 'Province Integrations', record_id: source.id, new_value: `Manual sync requested for ${source.name}` });
+    try {
+      const response = await fetchWithAuth('/api/province-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId }),
       });
-    const source = data.provinceApiSources.find(s => s.id === sourceId);
-    if (source) audit({ action: 'Trigger Sync', module: 'Province Integrations', record_id: source.id, new_value: `Manual sync requested for ${source.name}` });
-  }, [data.provinceApiSources, patchState, loadProvinceSources, loadProvinceSyncLogs, audit, fetchWithAuth]);
+      const message = response.ok ? undefined : await readError(response, 'The sync failed');
+      await Promise.all([loadProvinceSources(), loadProvinceSyncLogs(), loadProvinceDataRecords()]);
+      return message ? fail(message) : ok();
+    } catch (err) {
+      console.error('[triggerProvinceSync]', err);
+      void loadProvinceSources();
+      void loadProvinceSyncLogs();
+      return fail('The provincial sync service is unavailable.');
+    }
+  }, [patchState, loadProvinceSources, loadProvinceSyncLogs, loadProvinceDataRecords, audit, fetchWithAuth]);
 
-  // -------------------------------------------------------------------------
-  // Keep a live ref of `data` for use inside callbacks that read current state
-  // -------------------------------------------------------------------------
-  const dataRef = useRef(data);
-  useEffect(() => { dataRef.current = data; }, [data]);
-
-  const value = {
+  const value: DataStoreContextType = {
     isLoaded,
     users: data.users,
     companies: data.companies,
@@ -1031,12 +1004,12 @@ export function SupabaseDataProvider({ children }: { children: ReactNode }) {
     provinceSyncLogs: data.provinceSyncLogs,
     provinceDataRecords: data.provinceDataRecords,
     addUser, updateUser, deleteUser,
-    submitRegistration, reviewRegistration,
+    submitRegistration, reviewRegistration, resubmitRegistration,
     addExportRecord, updateExportRecord, deleteExportRecord, reviewExportRecord,
     addComplaint, updateComplaint, resolveComplaint, escalateComplaint, addComplaintNote,
     addMasterItem, updateMasterItem, deleteMasterItem,
     addProvinceApiSource, updateProvinceApiSource, deleteProvinceApiSource, triggerProvinceSync,
-    markAllNotificationsRead, resetData,
+    markAllNotificationsRead, resetData, refresh,
   };
 
   return <DataStoreContext.Provider value={value}>{children}</DataStoreContext.Provider>;

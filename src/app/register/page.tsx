@@ -1,29 +1,95 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { ChevronRight, ChevronLeft, CheckCircle, AlertCircle, Upload, X, FileText } from 'lucide-react';
 import Image from 'next/image';
 import { generateId } from '@/lib/utils';
 import { useDataStore } from '@/lib/data-store';
-import { registerExporter } from '@/lib/registration';
-import { useMockData } from '@/lib/supabase/use-mock';
 
 const steps = ['Company Information', 'Authorized Representative', 'Verification'];
 
+const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+const ACCEPTED_EXTENSIONS = '.pdf,.jpg,.jpeg,.png';
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+const REQUIRED_UPLOADS = [
+  { key: 'reg_cert', label: 'Company Registration Certificate', step: 0 },
+  { key: 'ntn_cert', label: 'NTN Certificate', step: 0 },
+  { key: 'auth_letter', label: 'Authority Letter', step: 1 },
+  { key: 'cnic_copy', label: 'CNIC Copy', step: 1 },
+];
+
+const COMPANY_TYPES = ['Private Limited', 'Public Limited', 'Sole Proprietor', 'Partnership'];
+const BUSINESS_NATURES = ['Agricultural Export', 'Food Processing & Export', 'Trading & Export', 'Agro-Industrial Export'];
+
+interface UploadFieldProps {
+  fieldKey: string;
+  label: string;
+  hint?: string;
+  file?: File;
+  registerRef: (element: HTMLInputElement | null) => void;
+  onSelect: (file: File | undefined) => void;
+  onRemove: () => void;
+  onOpen: () => void;
+}
+
+/**
+ * Single document slot. Declared at module scope so React keeps the same
+ * component type across renders — defining it inside the page would remount the
+ * file input on every keystroke and drop the selected file.
+ */
+function UploadField({ fieldKey, label, hint, file, registerRef, onSelect, onRemove, onOpen }: UploadFieldProps) {
+  return (
+    <div>
+      <label htmlFor={`upload-${fieldKey}`} className="block text-sm font-medium text-gray-700 mb-1">{label} *</label>
+      {file ? (
+        <div className="flex items-center justify-between p-3 border border-green-300 bg-green-50 rounded-lg">
+          <div className="flex items-center gap-2 min-w-0">
+            <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <span className="text-sm text-gray-800 truncate">{file.name}</span>
+            <span className="text-xs text-gray-400">({(file.size / 1024).toFixed(0)} KB)</span>
+          </div>
+          <button type="button" aria-label={`Remove ${label}`} onClick={onRemove} className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        <div
+          role="button"
+          tabIndex={0}
+          className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer transition-colors"
+          onClick={onOpen}
+          onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') onOpen(); }}
+          onDragOver={event => { event.preventDefault(); event.stopPropagation(); }}
+          onDrop={event => { event.preventDefault(); event.stopPropagation(); onSelect(event.dataTransfer.files?.[0]); }}
+        >
+          <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+          <p className="text-sm text-gray-500">{hint ?? 'Click or drag to upload (PDF, JPG, PNG)'}</p>
+        </div>
+      )}
+      <input
+        id={`upload-${fieldKey}`}
+        ref={registerRef}
+        type="file"
+        accept={ACCEPTED_EXTENSIONS}
+        className="hidden"
+        onChange={event => onSelect(event.target.files?.[0])}
+      />
+    </div>
+  );
+}
+
 export default function RegisterPage() {
-  const router = useRouter();
   const { submitRegistration, masterItems } = useDataStore();
-  const isMockMode = useMockData();
   const provinces = masterItems.provinces;
   const products = masterItems.products;
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [verificationResults, setVerificationResults] = useState<Record<string, { status: string; message: string }>>({});
+  const [verificationRequested, setVerificationRequested] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [stepError, setStepError] = useState('');
   const [regNumber] = useState(generateId('REG'));
 
   const [company, setCompany] = useState({
@@ -42,10 +108,6 @@ export default function RegisterPage() {
   const [fileError, setFileError] = useState('');
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
-  const ACCEPTED_EXTENSIONS = '.pdf,.jpg,.jpeg,.png';
-  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-
   const handleFileSelect = (fieldKey: string, file: File | undefined) => {
     if (!file) return;
     if (!ACCEPTED_TYPES.includes(file.type)) {
@@ -53,18 +115,11 @@ export default function RegisterPage() {
       return;
     }
     if (file.size > MAX_FILE_SIZE) {
-      setFileError(`File "${file.name}" exceeds 10MB limit.`);
+      setFileError(`File "${file.name}" exceeds the 10MB limit.`);
       return;
     }
     setFileError('');
     setUploadedFiles(prev => ({ ...prev, [fieldKey]: file }));
-  };
-
-  const handleDrop = (e: React.DragEvent, fieldKey: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const file = e.dataTransfer.files?.[0];
-    handleFileSelect(fieldKey, file);
   };
 
   const removeFile = (fieldKey: string) => {
@@ -74,39 +129,113 @@ export default function RegisterPage() {
       return next;
     });
     // Reset the file input so the same file can be re-selected
-    if (fileInputRefs.current[fieldKey]) {
-      fileInputRefs.current[fieldKey]!.value = '';
+    const input = fileInputRefs.current[fieldKey];
+    if (input) input.value = '';
+  };
+
+  /** Per-step validation. Returns the first problem, or null when the step is complete. */
+  const validateStep = (index: number): string | null => {
+    if (index === 0) {
+      if (!company.legal_name.trim()) return 'Enter the legal name of the company.';
+      if (!company.ntn.trim()) return 'Enter the company NTN.';
+      if (!company.secp_number.trim()) return 'Enter the SECP registration number.';
+      if (!company.registration_date) return 'Select the business registration date.';
+      if (!company.province) return 'Select a province.';
+      if (!company.district.trim()) return 'Enter a district.';
+      if (!company.address.trim()) return 'Enter the registered business address.';
+      if (!company.city.trim()) return 'Enter a city.';
+      if (!company.email.trim()) return 'Enter the company email address.';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(company.email.trim())) return 'Enter a valid company email address.';
+      if (!company.phone.trim()) return 'Enter a company telephone number.';
+      if (company.main_export_categories.length === 0) return 'Select at least one main export category.';
+      const missing = REQUIRED_UPLOADS.filter(item => item.step === 0 && !uploadedFiles[item.key]);
+      if (missing.length) return `Upload the following documents: ${missing.map(item => item.label).join(', ')}.`;
+      return null;
     }
+    if (index === 1) {
+      if (!representative.cnic.trim()) return 'Enter the representative CNIC/NICOP number.';
+      if (!representative.full_name.trim()) return 'Enter the representative full name.';
+      if (!representative.designation.trim()) return 'Enter the representative designation.';
+      if (!representative.mobile.trim()) return 'Enter the representative mobile number.';
+      if (!representative.email.trim()) return 'Enter the representative email address.';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(representative.email.trim())) return 'Enter a valid representative email address.';
+      if (!representative.username.trim()) return 'Choose a username.';
+      if (representative.password.length < 8) return 'Use a password with at least 8 characters.';
+      if (representative.password !== representative.confirm_password) return 'Passwords do not match.';
+      const missing = REQUIRED_UPLOADS.filter(item => item.step === 1 && !uploadedFiles[item.key]);
+      if (missing.length) return `Upload the following documents: ${missing.map(item => item.label).join(', ')}.`;
+      return null;
+    }
+    if (!consent) return 'Confirm the declaration before submitting.';
+    return null;
   };
 
-  const runVerification = () => {
-    setVerifying(true);
-    setVerificationResults({
-      nadra: { status: 'pending', message: 'NADRA verification will be performed by an authorized reviewer after submission.' },
-      secp: { status: 'pending', message: 'SECP verification will be performed by an authorized reviewer after submission.' },
-      ntn: { status: 'pending', message: 'NTN/FBR verification will be performed by an authorized reviewer after submission.' },
-    });
-    setVerifying(false);
-  };
-
-  const handleSubmit = async () => {
-    if (!consent) return;
-    if (representative.password !== representative.confirm_password) {
-      setSubmitError('Passwords do not match.');
+  const goNext = () => {
+    const problem = validateStep(step);
+    if (problem) {
+      setStepError(problem);
       return;
     }
+    setStepError('');
+    setStep(step + 1);
+  };
+
+  const goPrevious = () => {
+    setStepError('');
+    setSubmitError('');
+    setStep(step - 1);
+  };
+
+  const uploadedDocumentNames = useMemo(
+    () => Object.entries(uploadedFiles).map(([key, file]) => {
+      const label = REQUIRED_UPLOADS.find(item => item.key === key)?.label ?? key;
+      return `${label}: ${file.name}`;
+    }),
+    [uploadedFiles],
+  );
+
+  const handleSubmit = async () => {
+    // Re-validate every step so a skipped field can never reach the backend.
+    for (let index = 0; index < steps.length; index += 1) {
+      const problem = validateStep(index);
+      if (problem) {
+        setStep(index);
+        setStepError(problem);
+        return;
+      }
+    }
+    setStepError('');
     setSubmitError('');
     setLoading(true);
     try {
-      const input = { company, representative, registration_number: regNumber };
-      if (isMockMode) {
-        submitRegistration(input);
-      } else {
-        const result = await registerExporter(input);
-        if (result.error) {
-          setSubmitError(result.error);
-          return;
-        }
+      const result = await submitRegistration({
+        company: {
+          ...company,
+          legal_name: company.legal_name.trim(),
+          trading_name: company.trading_name.trim() || undefined,
+          ntn: company.ntn.trim(),
+          secp_number: company.secp_number.trim(),
+          address: company.address.trim(),
+          district: company.district.trim(),
+          city: company.city.trim(),
+          website: company.website.trim() || undefined,
+          email: company.email.trim(),
+          phone: company.phone.trim(),
+        },
+        representative: {
+          full_name: representative.full_name.trim(),
+          email: representative.email.trim(),
+          username: representative.username.trim(),
+          password: representative.password,
+          cnic: representative.cnic.trim(),
+          designation: representative.designation.trim(),
+          mobile: representative.mobile.trim(),
+        },
+        registration_number: regNumber,
+      });
+      if (result.error) {
+        setSubmitError(result.error);
+        return;
       }
       setSubmitted(true);
     } catch {
@@ -123,17 +252,25 @@ export default function RegisterPage() {
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-10 h-10 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Submitted Successfully!</h2>
-          <p className="text-gray-500 mb-6">Your application has been submitted for review by TDAP/NAFSA officers.</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Submitted Successfully</h2>
+          <p className="text-gray-500 mb-6">Your application has been submitted for review by TDAP, then NAFSA.</p>
           <div className="card p-6 text-left space-y-3 mb-6">
             <div className="flex justify-between"><span className="text-gray-500">Registration Number:</span><span className="font-mono font-bold">{regNumber}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Company:</span><span className="font-medium">{company.legal_name}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Status:</span><span className="badge bg-yellow-100 text-yellow-800">Pending Verification</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Submitted:</span><span>{new Date().toLocaleString()}</span></div>
+            {uploadedDocumentNames.length > 0 && (
+              <div className="pt-3 border-t">
+                <p className="text-gray-500 mb-1">Documents attached:</p>
+                <ul className="list-disc list-inside text-xs text-gray-600 space-y-0.5">
+                  {uploadedDocumentNames.map(name => <li key={name}>{name}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
           <div className="card p-4 mb-6 bg-blue-50 border-blue-200">
-            <p className="text-sm font-medium text-blue-800 mb-1">Your account has been created!</p>
-            <p className="text-sm text-blue-600">Login with your email address and the password you chose during registration.</p>
+            <p className="text-sm font-medium text-blue-800 mb-1">Your account has been created</p>
+            <p className="text-sm text-blue-600">Sign in with <span className="font-medium">{representative.email.trim()}</span> and the password you chose during registration.</p>
           </div>
           <div className="flex gap-3 justify-center">
             <button className="btn-outline" onClick={() => window.print()}>Download Acknowledgment</button>
@@ -176,15 +313,16 @@ export default function RegisterPage() {
         </div>
 
         <div className="card p-6 md:p-8">
+          {(fileError || stepError) && (
+            <div className="flex items-start gap-2 p-3 mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>{fileError || stepError}</span>
+            </div>
+          )}
+
           {step === 0 && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-gray-900">Step 1: Company Information</h2>
-              {fileError && (
-                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-                  <AlertCircle className="w-4 h-4" />
-                  {fileError}
-                </div>
-              )}
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Legal Name of Company *</label>
@@ -197,7 +335,7 @@ export default function RegisterPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Company Type *</label>
                   <select value={company.company_type} onChange={e => setCompany({ ...company, company_type: e.target.value })} className="input-field">
-                    <option>Private Limited</option><option>Public Limited</option><option>Sole Proprietor</option><option>Partnership</option>
+                    {COMPANY_TYPES.map(type => <option key={type}>{type}</option>)}
                   </select>
                 </div>
                 <div>
@@ -210,11 +348,11 @@ export default function RegisterPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Business Registration Date *</label>
-                  <input type="date" value={company.registration_date} onChange={e => setCompany({ ...company, registration_date: e.target.value })} className="input-field" />
+                  <input type="date" max={new Date().toISOString().slice(0, 10)} value={company.registration_date} onChange={e => setCompany({ ...company, registration_date: e.target.value })} className="input-field" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Province *</label>
-                  <select value={company.province} onChange={e => setCompany({ ...company, province: e.target.value, district: '' })} className="input-field">
+                  <select value={company.province} onChange={e => setCompany({ ...company, province: e.target.value })} className="input-field">
                     <option value="">Select Province</option>
                     {provinces.map(province => <option key={province}>{province}</option>)}
                   </select>
@@ -233,7 +371,7 @@ export default function RegisterPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Website (optional)</label>
-                  <input value={company.website} onChange={e => setCompany({ ...company, website: e.target.value })} className="input-field" />
+                  <input value={company.website} onChange={e => setCompany({ ...company, website: e.target.value })} className="input-field" placeholder="https://" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Company Email *</label>
@@ -246,63 +384,39 @@ export default function RegisterPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nature of Export Business *</label>
                   <select value={company.nature_of_business} onChange={e => setCompany({ ...company, nature_of_business: e.target.value })} className="input-field">
-                    <option>Agricultural Export</option><option>Food Processing & Export</option><option>Trading & Export</option><option>Agro-Industrial Export</option>
+                    {BUSINESS_NATURES.map(nature => <option key={nature}>{nature}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Main Export Categories *</label>
-                  <select multiple value={company.main_export_categories} onChange={e => setCompany({ ...company, main_export_categories: Array.from(e.target.selectedOptions, o => o.value) })} className="input-field h-24">
+                  <select
+                    multiple
+                    value={company.main_export_categories}
+                    onChange={e => setCompany({ ...company, main_export_categories: Array.from(e.target.selectedOptions, o => o.value) })}
+                    className="input-field h-24"
+                  >
                     {products.map(product => <option key={product}>{product}</option>)}
                   </select>
+                  <p className="mt-1 text-xs text-gray-400">Hold Ctrl (Cmd on Mac) to select more than one.</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Company Registration Certificate *</label>
-                  {uploadedFiles['reg_cert'] ? (
-                    <div className="flex items-center justify-between p-3 border border-green-300 bg-green-50 rounded-lg">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
-                        <span className="text-sm text-gray-800 truncate">{uploadedFiles['reg_cert'].name}</span>
-                        <span className="text-xs text-gray-400">({(uploadedFiles['reg_cert'].size / 1024).toFixed(0)} KB)</span>
-                      </div>
-                      <button type="button" onClick={() => removeFile('reg_cert')} className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0"><X className="w-4 h-4" /></button>
-                    </div>
-                  ) : (
-                    <div
-                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer transition-colors"
-                      onClick={() => fileInputRefs.current['reg_cert']?.click()}
-                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
-                      onDrop={e => handleDrop(e, 'reg_cert')}
-                    >
-                      <input ref={el => { fileInputRefs.current['reg_cert'] = el; }} type="file" accept={ACCEPTED_EXTENSIONS} className="hidden" onChange={e => handleFileSelect('reg_cert', e.target.files?.[0])} />
-                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                      <p className="text-sm text-gray-500">Click or drag to upload (PDF, JPG, PNG)</p>
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">NTN Certificate *</label>
-                  {uploadedFiles['ntn_cert'] ? (
-                    <div className="flex items-center justify-between p-3 border border-green-300 bg-green-50 rounded-lg">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
-                        <span className="text-sm text-gray-800 truncate">{uploadedFiles['ntn_cert'].name}</span>
-                        <span className="text-xs text-gray-400">({(uploadedFiles['ntn_cert'].size / 1024).toFixed(0)} KB)</span>
-                      </div>
-                      <button type="button" onClick={() => removeFile('ntn_cert')} className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0"><X className="w-4 h-4" /></button>
-                    </div>
-                  ) : (
-                    <div
-                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer transition-colors"
-                      onClick={() => fileInputRefs.current['ntn_cert']?.click()}
-                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
-                      onDrop={e => handleDrop(e, 'ntn_cert')}
-                    >
-                      <input ref={el => { fileInputRefs.current['ntn_cert'] = el; }} type="file" accept={ACCEPTED_EXTENSIONS} className="hidden" onChange={e => handleFileSelect('ntn_cert', e.target.files?.[0])} />
-                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                      <p className="text-sm text-gray-500">Click or drag to upload (PDF, JPG, PNG)</p>
-                    </div>
-                  )}
-                </div>
+                <UploadField
+                  fieldKey="reg_cert"
+                  label="Company Registration Certificate"
+                  file={uploadedFiles["reg_cert"]}
+                  registerRef={element => { fileInputRefs.current["reg_cert"] = element; }}
+                  onSelect={file => handleFileSelect("reg_cert", file)}
+                  onRemove={() => removeFile("reg_cert")}
+                  onOpen={() => fileInputRefs.current["reg_cert"]?.click()}
+                />
+                <UploadField
+                  fieldKey="ntn_cert"
+                  label="NTN Certificate"
+                  file={uploadedFiles["ntn_cert"]}
+                  registerRef={element => { fileInputRefs.current["ntn_cert"] = element; }}
+                  onSelect={file => handleFileSelect("ntn_cert", file)}
+                  onRemove={() => removeFile("ntn_cert")}
+                  onOpen={() => fileInputRefs.current["ntn_cert"]?.click()}
+                />
               </div>
             </div>
           )}
@@ -310,12 +424,6 @@ export default function RegisterPage() {
           {step === 1 && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-gray-900">Step 2: Authorized Representative</h2>
-              {fileError && (
-                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-                  <AlertCircle className="w-4 h-4" />
-                  {fileError}
-                </div>
-              )}
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">CNIC/NICOP Number *</label>
@@ -335,7 +443,8 @@ export default function RegisterPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
-                  <input type="email" value={representative.email} onChange={e => setRepresentative({ ...representative, email: e.target.value })} className="input-field" />
+                  <input type="email" autoComplete="email" value={representative.email} onChange={e => setRepresentative({ ...representative, email: e.target.value })} className="input-field" />
+                  <p className="mt-1 text-xs text-gray-400">You will sign in with this email address.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Username *</label>
@@ -343,60 +452,36 @@ export default function RegisterPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
-                  <input type="password" value={representative.password} onChange={e => setRepresentative({ ...representative, password: e.target.value })} className="input-field" />
+                  <input type="password" autoComplete="new-password" minLength={8} value={representative.password} onChange={e => setRepresentative({ ...representative, password: e.target.value })} className="input-field" />
+                  <p className="mt-1 text-xs text-gray-400">At least 8 characters.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password *</label>
-                  <input type="password" value={representative.confirm_password} onChange={e => setRepresentative({ ...representative, confirm_password: e.target.value })} className="input-field" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Authority Letter *</label>
-                  {uploadedFiles['auth_letter'] ? (
-                    <div className="flex items-center justify-between p-3 border border-green-300 bg-green-50 rounded-lg">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
-                        <span className="text-sm text-gray-800 truncate">{uploadedFiles['auth_letter'].name}</span>
-                        <span className="text-xs text-gray-400">({(uploadedFiles['auth_letter'].size / 1024).toFixed(0)} KB)</span>
-                      </div>
-                      <button type="button" onClick={() => removeFile('auth_letter')} className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0"><X className="w-4 h-4" /></button>
-                    </div>
-                  ) : (
-                    <div
-                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer transition-colors"
-                      onClick={() => fileInputRefs.current['auth_letter']?.click()}
-                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
-                      onDrop={e => handleDrop(e, 'auth_letter')}
-                    >
-                      <input ref={el => { fileInputRefs.current['auth_letter'] = el; }} type="file" accept={ACCEPTED_EXTENSIONS} className="hidden" onChange={e => handleFileSelect('auth_letter', e.target.files?.[0])} />
-                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                      <p className="text-sm text-gray-500">Upload authority letter</p>
-                    </div>
+                  <input type="password" autoComplete="new-password" value={representative.confirm_password} onChange={e => setRepresentative({ ...representative, confirm_password: e.target.value })} className="input-field" />
+                  {representative.confirm_password.length > 0 && representative.password !== representative.confirm_password && (
+                    <p className="mt-1 text-xs text-red-500">Passwords do not match.</p>
                   )}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">CNIC Copy *</label>
-                  {uploadedFiles['cnic_copy'] ? (
-                    <div className="flex items-center justify-between p-3 border border-green-300 bg-green-50 rounded-lg">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
-                        <span className="text-sm text-gray-800 truncate">{uploadedFiles['cnic_copy'].name}</span>
-                        <span className="text-xs text-gray-400">({(uploadedFiles['cnic_copy'].size / 1024).toFixed(0)} KB)</span>
-                      </div>
-                      <button type="button" onClick={() => removeFile('cnic_copy')} className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0"><X className="w-4 h-4" /></button>
-                    </div>
-                  ) : (
-                    <div
-                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gov-green-500 cursor-pointer transition-colors"
-                      onClick={() => fileInputRefs.current['cnic_copy']?.click()}
-                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
-                      onDrop={e => handleDrop(e, 'cnic_copy')}
-                    >
-                      <input ref={el => { fileInputRefs.current['cnic_copy'] = el; }} type="file" accept={ACCEPTED_EXTENSIONS} className="hidden" onChange={e => handleFileSelect('cnic_copy', e.target.files?.[0])} />
-                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                      <p className="text-sm text-gray-500">Upload CNIC copy</p>
-                    </div>
-                  )}
-                </div>
+                <UploadField
+                  fieldKey="auth_letter"
+                  label="Authority Letter"
+                  hint="Upload authority letter"
+                  file={uploadedFiles["auth_letter"]}
+                  registerRef={element => { fileInputRefs.current["auth_letter"] = element; }}
+                  onSelect={file => handleFileSelect("auth_letter", file)}
+                  onRemove={() => removeFile("auth_letter")}
+                  onOpen={() => fileInputRefs.current["auth_letter"]?.click()}
+                />
+                <UploadField
+                  fieldKey="cnic_copy"
+                  label="CNIC Copy"
+                  hint="Upload CNIC copy"
+                  file={uploadedFiles["cnic_copy"]}
+                  registerRef={element => { fileInputRefs.current["cnic_copy"] = element; }}
+                  onSelect={file => handleFileSelect("cnic_copy", file)}
+                  onRemove={() => removeFile("cnic_copy")}
+                  onOpen={() => fileInputRefs.current["cnic_copy"]?.click()}
+                />
               </div>
             </div>
           )}
@@ -409,8 +494,12 @@ export default function RegisterPage() {
                 <strong>Official verification:</strong> NADRA, SECP, and NTN/FBR checks are recorded as pending and are completed by authorized reviewers after submission.
               </div>
 
-              <button onClick={runVerification} disabled={verifying} className="btn-primary w-full py-3 disabled:opacity-50">
-                {verifying ? 'Preparing Verification Request...' : 'Mark Details Ready for Official Verification'}
+              <button
+                onClick={() => setVerificationRequested(true)}
+                disabled={verificationRequested}
+                className="btn-primary w-full py-3 disabled:opacity-50"
+              >
+                {verificationRequested ? 'Details marked ready for official verification' : 'Mark Details Ready for Official Verification'}
               </button>
 
               <div className="space-y-3">
@@ -424,13 +513,9 @@ export default function RegisterPage() {
                       <p className="font-medium text-gray-900">{v.label}</p>
                       <p className="text-sm text-gray-500">{v.desc}</p>
                     </div>
-                    {verificationResults[v.key] ? (
-                      <span className={`badge ${verificationResults[v.key].status === 'verified' ? 'bg-green-100 text-green-800' : verificationResults[v.key].status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                        {verificationResults[v.key].status === 'verified' ? 'Verified' : verificationResults[v.key].status === 'failed' ? 'Failed' : 'Pending Official Review'}
-                      </span>
-                    ) : (
-                      <span className="badge bg-gray-100 text-gray-500">Not Initiated</span>
-                    )}
+                    <span className={`badge ${verificationRequested ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-500'}`}>
+                      {verificationRequested ? 'Pending Official Review' : 'Not Initiated'}
+                    </span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between p-4 border rounded-lg">
@@ -442,10 +527,12 @@ export default function RegisterPage() {
                 </div>
                 <div className="flex items-center justify-between p-4 border rounded-lg">
                   <div>
-                    <p className="font-medium text-gray-900">Email Confirmation</p>
-                    <p className="text-sm text-gray-500">{representative.email || 'Not provided'}</p>
+                    <p className="font-medium text-gray-900">Documents Attached</p>
+                    <p className="text-sm text-gray-500">{uploadedDocumentNames.length} of {REQUIRED_UPLOADS.length} required documents</p>
                   </div>
-                  <span className="badge bg-yellow-100 text-yellow-800">Completed through Supabase Auth</span>
+                  <span className={`badge ${uploadedDocumentNames.length >= REQUIRED_UPLOADS.length ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                    {uploadedDocumentNames.length >= REQUIRED_UPLOADS.length ? 'Complete' : 'Incomplete'}
+                  </span>
                 </div>
               </div>
 
@@ -459,23 +546,23 @@ export default function RegisterPage() {
           )}
 
           {submitError && (
-            <div className="mt-6 flex items-center gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-              <AlertCircle className="w-4 h-4" />
-              {submitError}
+            <div className="mt-6 flex items-start gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>{submitError}</span>
             </div>
           )}
 
           {/* Navigation */}
           <div className="flex justify-between mt-8 pt-6 border-t">
             {step > 0 ? (
-              <button onClick={() => setStep(step - 1)} className="btn-outline flex items-center gap-2">
+              <button onClick={goPrevious} className="btn-outline flex items-center gap-2">
                 <ChevronLeft className="w-4 h-4" /> Previous
               </button>
             ) : (
               <Link href="/" className="btn-outline">Cancel</Link>
             )}
-            {step < 2 ? (
-              <button onClick={() => setStep(step + 1)} className="btn-primary flex items-center gap-2">
+            {step < steps.length - 1 ? (
+              <button onClick={goNext} className="btn-primary flex items-center gap-2">
                 Next <ChevronRight className="w-4 h-4" />
               </button>
             ) : (

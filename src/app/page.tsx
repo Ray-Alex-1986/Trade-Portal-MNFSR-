@@ -104,6 +104,46 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* About / Services */}
+      <section id="about" className="py-16 bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="text-center mb-12">
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">What This Portal Does</h3>
+            <p className="text-gray-500 max-w-2xl mx-auto">
+              A single workflow from exporter registration through certification to complaint resolution, shared by MNFSR, the Ministry of Commerce, TDAP, and NAFSA.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              { icon: FileText, title: 'Exporter Registration', desc: 'Register your company once, with NADRA, SECP, and NTN details verified by authorized reviewers.' },
+              { icon: Package, title: 'Consignment Records', desc: 'Submit export records with buyer, shipment, and document details for each consignment.' },
+              { icon: Shield, title: 'Two-Stage Certification', desc: 'Every application passes a TDAP commercial review, then a NAFSA food-safety review.' },
+              { icon: AlertTriangle, title: 'Complaint Resolution', desc: 'Buyers and importers can file complaints without an account and track them by number.' },
+            ].map(service => (
+              <div key={service.title} className="card p-6">
+                <div className="w-11 h-11 rounded-xl bg-gov-green-50 text-gov-green-600 flex items-center justify-center mb-4">
+                  <service.icon className="w-5 h-5" />
+                </div>
+                <h4 className="font-semibold text-gray-900 mb-1">{service.title}</h4>
+                <p className="text-sm text-gray-500">{service.desc}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-10 grid sm:grid-cols-3 gap-4 max-w-3xl mx-auto text-center">
+            {[
+              { step: '1', label: 'Register your company' },
+              { step: '2', label: 'Submit consignment records and documents' },
+              { step: '3', label: 'Receive TDAP and NAFSA clearance' },
+            ].map(item => (
+              <div key={item.step} className="p-4 rounded-xl bg-gray-50 border">
+                <span className="inline-flex w-7 h-7 rounded-full bg-gov-green-500 text-white text-sm font-bold items-center justify-center mb-2">{item.step}</span>
+                <p className="text-sm text-gray-600">{item.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Public Statistics */}
       <section id="stats" className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4">
@@ -258,21 +298,21 @@ export default function HomePage() {
               </ul>
             </div>
             <div>
-              <h5 className="text-white font-medium mb-3">Legal</h5>
+              <h5 className="text-white font-medium mb-3">Portal Sections</h5>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white">Privacy Policy</a></li>
-                <li><a href="#" className="hover:text-white">Terms of Use</a></li>
-                <li><a href="#" className="hover:text-white">Disclaimer</a></li>
-                <li><a href="#" className="hover:text-white">Accessibility</a></li>
+                <li><a href="#about" className="hover:text-white">About the Portal</a></li>
+                <li><a href="#stats" className="hover:text-white">Public Statistics</a></li>
+                <li><a href="#notices" className="hover:text-white">SPS &amp; Export Notices</a></li>
+                <li><a href="#contact" className="hover:text-white">Helpdesk &amp; Contact</a></li>
               </ul>
             </div>
             <div>
-              <h5 className="text-white font-medium mb-3">Institutions</h5>
+              <h5 className="text-white font-medium mb-3">Participating Institutions</h5>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white">MNFSR</a></li>
-                <li><a href="#" className="hover:text-white">Ministry of Commerce</a></li>
-                <li><a href="#" className="hover:text-white">TDAP</a></li>
-                <li><a href="#" className="hover:text-white">NAFSA</a></li>
+                <li>Ministry of National Food Security &amp; Research</li>
+                <li>Ministry of Commerce</li>
+                <li>Trade Development Authority of Pakistan</li>
+                <li>National Agri-trade &amp; Food Safety Authority</li>
               </ul>
             </div>
           </div>

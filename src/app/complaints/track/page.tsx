@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Search, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import Image from 'next/image';
 import { Complaint } from '@/lib/types';
@@ -10,18 +11,21 @@ import { getStatusColor } from '@/lib/utils';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { usePortalBackend } from '@/lib/supabase/use-mock';
 
-export default function TrackComplaintPage() {
+function TrackComplaintPage() {
+  const searchParams = useSearchParams();
   const [trackingNum, setTrackingNum] = useState('');
   const [result, setResult] = useState<Complaint | null>(null);
   const [searched, setSearched] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [error, setError] = useState('');
   const { complaints } = useDataStore();
   const backend = usePortalBackend();
 
-  const handleSearch = async () => {
-    const trackingNumber = trackingNum.trim();
+  const lookup = useCallback(async (raw: string) => {
+    const trackingNumber = raw.trim();
     if (!trackingNumber) return;
     setIsSearching(true);
+    setError('');
     try {
       if (backend === 'mysql') {
         const response = await fetch(`/api/mysql/complaints/track?tracking_number=${encodeURIComponent(trackingNumber)}`, {
@@ -45,14 +49,25 @@ export default function TrackComplaintPage() {
           setResult(found || null);
         }
       }
-    } catch (error) {
-      console.error('[trackComplaint]', error);
+    } catch (lookupError) {
+      console.error('[trackComplaint]', lookupError);
       setResult(null);
+      setError('Complaint tracking is temporarily unavailable. Please try again shortly.');
     } finally {
       setSearched(true);
       setIsSearching(false);
     }
-  };
+  }, [backend, complaints]);
+
+  const handleSearch = () => { void lookup(trackingNum); };
+
+  // Support deep links from the submission confirmation screen.
+  useEffect(() => {
+    const tracking = searchParams.get('tracking');
+    if (!tracking) return;
+    setTrackingNum(tracking);
+    void lookup(tracking);
+  }, [searchParams, lookup]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -89,8 +104,8 @@ export default function TrackComplaintPage() {
         {searched && !result && (
           <div className="card p-8 text-center text-gray-500">
             <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-yellow-400" />
-            <p className="font-medium">No complaint found with this tracking number</p>
-            <p className="text-sm">Please verify the tracking number and try again.</p>
+            <p className="font-medium">{error ? 'Tracking is unavailable' : 'No complaint found with this tracking number'}</p>
+            <p className="text-sm">{error || 'Please verify the tracking number and try again.'}</p>
           </div>
         )}
 
@@ -144,5 +159,17 @@ export default function TrackComplaintPage() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * useSearchParams() requires a Suspense boundary so this route can still be
+ * prerendered as static HTML.
+ */
+export default function TrackComplaintRoute() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-500">Loading complaint tracking…</div>}>
+      <TrackComplaintPage />
+    </Suspense>
   );
 }
