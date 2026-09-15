@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { getHomeForRole } from '@/lib/permissions';
 import { useMockData } from '@/lib/supabase/use-mock';
 import { DEMO_PASSWORD } from '@/lib/mock-passwords';
+import DemoModeNotice from '@/components/DemoModeNotice';
 import { Eye, EyeOff, AlertCircle, Info } from 'lucide-react';
 import Image from 'next/image';
 
@@ -65,7 +66,9 @@ function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gov-green-500 via-gov-green-600 to-gov-green-700 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-gov-green-500 via-gov-green-600 to-gov-green-700 flex flex-col">
+      <DemoModeNotice />
+      <div className="flex-1 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 text-white/80 hover:text-white text-sm mb-4">
@@ -164,6 +167,7 @@ function LoginPage() {
               Use the credentials issued for your Export Portal account.
             </p>
           )}
+        </div>
         </div>
       </div>
     </div>
