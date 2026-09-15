@@ -1,10 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import RoleGuard from '@/components/auth/RoleGuard';
 import { useRouter } from 'next/navigation';
 import { useDataStore } from '@/lib/data-store';
-import { ChevronRight, ChevronLeft, CheckCircle, Upload, AlertCircle } from 'lucide-react';
+import { ROUTE_ROLES } from '@/lib/permissions';
+import { ChevronRight, ChevronLeft, CheckCircle, Upload, AlertCircle, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 
 const steps = ['Exporter Info', 'Export Item', 'Buyer Info', 'Shipment', 'Documents'];
@@ -25,6 +28,7 @@ export default function NewExportRecordPage() {
   const { companies, masterItems, addExportRecord } = useDataStore();
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [createdNumber, setCreatedNumber] = useState('');
 
   const products = masterItems.products || [];
@@ -32,7 +36,10 @@ export default function NewExportRecordPage() {
   const provinces = masterItems.provinces || [];
   const ports = masterItems.ports || [];
 
-  const myCompany = companies.find(company => company.owner_id === user?.id);
+  // Export records attach to the signed-in exporter's approved registration.
+  const myCompanies = companies.filter(company => company.owner_id === user?.id);
+  const myCompany = myCompanies.find(company => company.status === 'approved') ?? myCompanies[0];
+  const isApproved = myCompany?.status === 'approved';
 
   const [item, setItem] = useState({
     product: '', category: '', hs_code: '', description: '', quantity: 0, unit: 'Metric Tons',
@@ -49,19 +56,160 @@ export default function NewExportRecordPage() {
     shipping_company: '', container: '', bol_number: '', departure_date: '', arrival_date: '',
   });
 
-  const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
+  const [uploadedDocs, setUploadedDocs] = useState<Record<string, string>>({});
   const [docError, setDocError] = useState('');
 
-  const handleDocUpload = (docName: string) => {
-    setUploadedDocs(prev => ({ ...prev, [docName]: true }));
+  const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+  const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+  const handleDocUpload = (docName: string, file: File | undefined) => {
+    if (!file) return;
+    if (file.type && !ACCEPTED_TYPES.includes(file.type)) {
+      setDocError(`Invalid file type for "${file.name}". Upload PDF, JPG, PNG, DOCX, or XLSX.`);
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setDocError(`File "${file.name}" exceeds the 10MB limit.`);
+      return;
+    }
+    setUploadedDocs(prev => ({ ...prev, [docName]: file.name }));
     setDocError('');
+  };
+
+  const removeDoc = (docName: string) => {
+    setUploadedDocs(prev => {
+      const next = { ...prev };
+      delete next[docName];
+      return next;
+    });
   };
 
   const mandatoryDocsMissing = MANDATORY_DOCS.filter(d => !uploadedDocs[d]);
 
+  const handleSubmit = async () => {
+    if (!user || !myCompany) {
+      setDocError('Your exporter profile and approved company must be available before an export record can be submitted.');
+      return;
+    }
+    if (!isApproved) {
+      setDocError('Your company registration must be approved by TDAP and NAFSA before you can submit export records.');
+      return;
+    }
+    if (!item.product || !item.description || !item.quantity || !item.value) {
+      setStep(1);
+      setDocError('Please complete the required item information (product, description, quantity, value) before submitting.');
+      return;
+    }
+    if (!buyer.name || !buyer.company || !buyer.country) {
+      setStep(2);
+      setDocError('Please complete the required buyer information before submitting.');
+      return;
+    }
+    if (!shipment.dest_country) {
+      setStep(3);
+      setDocError('Please select a destination country before submitting.');
+      return;
+    }
+    if (mandatoryDocsMissing.length > 0) {
+      setStep(4);
+      setDocError(`Please upload the following mandatory documents: ${mandatoryDocsMissing.join(', ')}`);
+      return;
+    }
+
+    const productCategory = item.product.includes('Rice') ? 'Cereals'
+      : (item.product.includes('Mango') || item.product.includes('Citrus') || item.product.includes('Kinnow')) ? 'Fruits'
+      : (item.product.includes('Potato') || item.product.includes('Onion')) ? 'Vegetables'
+      : (item.product.includes('Meat') || item.product.includes('Seafood')) ? 'Meat & Seafood'
+      : 'Other Agricultural';
+
+    setSubmitting(true);
+    setDocError('');
+    try {
+      const result = await addExportRecord({
+        exporter_id: user.id,
+        company_id: myCompany.id,
+        product: item.product,
+        product_category: productCategory,
+        hs_code: item.hs_code,
+        description: item.description,
+        quantity: item.quantity,
+        unit: item.unit,
+        estimated_value: item.value,
+        currency: item.currency,
+        country_of_origin: 'Pakistan',
+        province_of_production: item.province,
+        district_of_production: item.district,
+        crop_year: item.crop_year,
+        batch_number: item.batch,
+        packaging_type: item.packaging,
+        num_packages: item.packages,
+        intended_shipment_date: item.shipment_date,
+        buyer_name: buyer.name,
+        buyer_company: buyer.company,
+        buyer_country: buyer.country,
+        buyer_address: buyer.address,
+        buyer_contact: buyer.contact,
+        buyer_email: buyer.email,
+        buyer_phone: buyer.phone,
+        purchase_order: buyer.po_number,
+        destination_country: shipment.dest_country,
+        destination_port: shipment.dest_port,
+        port_of_departure: shipment.departure_port,
+        transport_mode: shipment.transport_mode,
+        shipping_company: shipment.shipping_company,
+        container_number: shipment.container,
+        bill_of_lading: shipment.bol_number,
+        expected_departure: shipment.departure_date,
+        expected_arrival: shipment.arrival_date,
+        status: 'submitted',
+        documents: Object.entries(uploadedDocs).map(([docType, fileName]) => ({
+          id: `doc-${Date.now()}-${docType.replace(/\W/g, '')}`,
+          record_id: 'pending',
+          document_type: docType,
+          file_name: fileName,
+          file_size: 0,
+          upload_date: new Date().toISOString(),
+          uploaded_by: user.id,
+          version: 1,
+          verification_status: 'pending',
+          file_url: `local://${fileName}`,
+        })),
+      });
+      if (result.error || !result.data) {
+        setDocError(result.error ?? 'The export record could not be submitted.');
+        return;
+      }
+      setCreatedNumber(result.data.consignment_number);
+      setSubmitted(true);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const resetForm = () => {
+    setSubmitted(false);
+    setStep(0);
+    setCreatedNumber('');
+    setItem({
+      product: '', category: '', hs_code: '', description: '', quantity: 0, unit: 'Metric Tons',
+      value: 0, currency: 'USD', origin: 'Pakistan', province: '', district: '',
+      crop_year: 2026, batch: '', packaging: 'Carton Boxes', packages: 0, shipment_date: '',
+    });
+    setBuyer({ name: '', company: '', country: '', address: '', contact: '', email: '', phone: '', po_number: '' });
+    setShipment({
+      dest_country: '', dest_port: '', departure_port: '', transport_mode: 'Sea',
+      shipping_company: '', container: '', bol_number: '', departure_date: '', arrival_date: '',
+    });
+    setUploadedDocs({});
+    setDocError('');
+  };
+
   if (submitted) {
     return (
       <DashboardLayout>
+        <RoleGuard allow={ROUTE_ROLES['/dashboard/exports/new']}>
         <div className="max-w-lg mx-auto text-center py-12">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-10 h-10 text-green-600" />
@@ -70,17 +218,36 @@ export default function NewExportRecordPage() {
           <p className="text-gray-500 mb-4">Consignment <span className="font-mono font-bold text-gov-green-600">{createdNumber}</span> has been submitted for review.</p>
           <div className="flex gap-3 justify-center">
             <button className="btn-outline" onClick={() => router.push('/dashboard/exports')}>View Records</button>
-            <button className="btn-primary" onClick={() => { setSubmitted(false); setStep(0); }}>Create Another</button>
+            <button className="btn-primary" onClick={resetForm}>Create Another</button>
           </div>
         </div>
+        </RoleGuard>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout>
+      <RoleGuard allow={ROUTE_ROLES['/dashboard/exports/new']}>
       <div className="max-w-4xl mx-auto space-y-6">
         <h1 className="text-2xl font-bold text-gray-900">New Export Record</h1>
+
+        {!isApproved && (
+          <div className="flex items-start gap-2 p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">
+                {myCompany
+                  ? `Your registration ${myCompany.registration_number} is ${myCompany.status.replace(/_/g, ' ')}.`
+                  : 'No company registration is linked to your account.'}
+              </p>
+              <p className="mt-0.5">
+                Export records can be submitted once TDAP and NAFSA approve your registration.{' '}
+                <Link href="/dashboard" className="underline">Check your registration status</Link>.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Step Indicator */}
         <div className="flex items-center justify-between">
@@ -245,11 +412,16 @@ export default function NewExportRecordPage() {
                         </div>
                       </div>
                       {isUploaded ? (
-                        <span className="text-xs font-medium text-green-600">Uploaded</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-green-600 truncate max-w-[10rem]">{uploadedDocs[doc]}</span>
+                          <button type="button" onClick={() => removeDoc(doc)} aria-label={`Remove ${doc}`} className="p-1 text-gray-400 hover:text-red-500">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       ) : (
                         <label className="btn-outline text-xs cursor-pointer py-1 px-3">
                           <Upload className="w-3 h-3 inline mr-1" /> Upload
-                          <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" onChange={() => handleDocUpload(doc)} />
+                          <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" onChange={e => handleDocUpload(doc, e.target.files?.[0])} />
                         </label>
                       )}
                     </div>
@@ -266,97 +438,14 @@ export default function NewExportRecordPage() {
             {step < steps.length - 1 ? (
               <button onClick={() => setStep(step + 1)} className="btn-primary flex items-center gap-2">Next <ChevronRight className="w-4 h-4" /></button>
             ) : (
-              <button
-                onClick={() => {
-                  if (mandatoryDocsMissing.length > 0) {
-                    setDocError(`Please upload the following mandatory documents: ${mandatoryDocsMissing.join(', ')}`);
-                    return;
-                  }
-                  if (!user || !myCompany) {
-                    setDocError('Your exporter profile and approved company must be available before an export record can be submitted.');
-                    return;
-                  }
-                  if (!item.product || !item.description || !item.quantity || !item.value) {
-                    setStep(1);
-                    setDocError('Please complete the required item information (product, description, quantity, value) before submitting.');
-                    return;
-                  }
-                  if (!buyer.name || !buyer.company || !buyer.country) {
-                    setStep(2);
-                    setDocError('Please complete the required buyer information before submitting.');
-                    return;
-                  }
-                  if (!shipment.dest_country) {
-                    setStep(3);
-                    setDocError('Please select a destination country before submitting.');
-                    return;
-                  }
-                  const productCategory = item.product.includes('Rice') ? 'Cereals'
-                    : (item.product.includes('Mango') || item.product.includes('Citrus') || item.product.includes('Kinnow')) ? 'Fruits'
-                    : (item.product.includes('Potato') || item.product.includes('Onion')) ? 'Vegetables'
-                    : (item.product.includes('Meat') || item.product.includes('Seafood')) ? 'Meat & Seafood'
-                    : 'Other Agricultural';
-                  const record = addExportRecord({
-                    exporter_id: user.id,
-                    company_id: myCompany.id,
-                    product: item.product,
-                    product_category: productCategory,
-                    hs_code: item.hs_code,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unit: item.unit,
-                    estimated_value: item.value,
-                    currency: item.currency,
-                    country_of_origin: 'Pakistan',
-                    province_of_production: item.province,
-                    district_of_production: item.district,
-                    crop_year: item.crop_year,
-                    batch_number: item.batch,
-                    packaging_type: item.packaging,
-                    num_packages: item.packages,
-                    intended_shipment_date: item.shipment_date,
-                    buyer_name: buyer.name,
-                    buyer_company: buyer.company,
-                    buyer_country: buyer.country,
-                    buyer_address: buyer.address,
-                    buyer_contact: buyer.contact,
-                    buyer_email: buyer.email,
-                    buyer_phone: buyer.phone,
-                    purchase_order: buyer.po_number,
-                    destination_country: shipment.dest_country,
-                    destination_port: shipment.dest_port,
-                    port_of_departure: shipment.departure_port,
-                    transport_mode: shipment.transport_mode,
-                    shipping_company: shipment.shipping_company,
-                    container_number: shipment.container,
-                    bill_of_lading: shipment.bol_number,
-                    expected_departure: shipment.departure_date,
-                    expected_arrival: shipment.arrival_date,
-                    status: 'submitted',
-                    documents: Object.entries(uploadedDocs).filter(([, v]) => v).map(([docType]) => ({
-                      id: `doc-${Date.now()}-${docType.replace(/\s/g, '')}`,
-                      record_id: 'pending',
-                      document_type: docType,
-                      file_name: `${docType.replace(/\s/g, '_')}.pdf`,
-                      file_size: 1024,
-                      upload_date: new Date().toISOString(),
-                      uploaded_by: user.id,
-                      version: 1,
-                      verification_status: 'pending',
-                      file_url: '#',
-                    })),
-                  });
-                  setCreatedNumber(record.consignment_number);
-                  setSubmitted(true);
-                }}
-                className="btn-primary"
-              >
-                Submit Export Record
+              <button onClick={handleSubmit} disabled={submitting || !isApproved} className="btn-primary disabled:opacity-50">
+                {submitting ? 'Submitting...' : 'Submit Export Record'}
               </button>
             )}
           </div>
         </div>
       </div>
+      </RoleGuard>
     </DashboardLayout>
   );
 }

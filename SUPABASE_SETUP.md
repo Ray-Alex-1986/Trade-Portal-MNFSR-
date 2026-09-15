@@ -23,7 +23,7 @@ For the supplied demo and registration flows:
 3. For local/demo use, disable **Confirm email**. This lets the public registration form create its profile and company application in the same authenticated session.
 4. Add your development site URL (for example `http://localhost:3000`) under **Authentication → URL Configuration**.
 
-For production, keep confirmation enabled only after replacing the client-side registration helper with a server-side, post-confirmation profile-provisioning workflow.
+With `SUPABASE_SERVICE_ROLE_KEY` set, public registration runs server-side through `POST /api/register`: the account is created already confirmed and the profile plus company application are written with the service role, so the **Confirm email** setting does not matter. The browser-side sign-up path is only used when that key is absent.
 
 ## 4. Apply the database SQL
 Open **SQL Editor → New query** and run these files in this exact order:
@@ -37,6 +37,9 @@ Open **SQL Editor → New query** and run these files in this exact order:
 The seed script runs `reset_demo_data()` automatically. It can be rerun in the SQL editor to restore the demo dataset.
 
 ## 5. Demo accounts
+
+Offline demo mode (no Supabase keys configured) accepts the same password for the seeded accounts below. Accounts created through registration or User Management sign in with the password chosen at creation time.
+
 All seeded accounts use this password:
 
 ```text
@@ -64,8 +67,9 @@ If updates do not arrive, confirm that `001_portal_updates.sql` and `004_documen
 ## 7. Server-side routes
 The following routes require a valid Supabase access token and service-role environment variable:
 
+- `POST /api/register` — public exporter registration (service role; no access token required).
 - `POST /api/reset-demo` — super-admin-only demo reseed.
-- `POST|PATCH|DELETE /api/admin-users` — super-admin user invitations and management.
+- `POST|PATCH|DELETE /api/admin-users` — super-admin user creation, invitation, and management. `POST` accepts an optional `password`: supply one to create a ready-to-use account, or omit it to email a password-setup invitation.
 - `POST /api/province-sync` — authenticated administrator sync proxy.
 
 Province source API keys are stored in the database and are sent only by the server-side sync proxy. Use an HTTPS URL and avoid entering credentials in client-side code.

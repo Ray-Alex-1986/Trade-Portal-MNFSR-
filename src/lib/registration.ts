@@ -24,34 +24,34 @@ export interface RegistrationResult {
   error?: string;
 }
 
+async function postRegistration(url: string, input: RegistrationInput): Promise<{ status: number; result: RegistrationResult }> {
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const result = await response.json().catch(() => ({})) as RegistrationResult;
+  return { status: response.status, result: response.ok ? result : { error: result.error || 'Registration could not be submitted.' } };
+}
+
 async function registerMySqlExporter(input: RegistrationInput): Promise<RegistrationResult> {
   try {
-    const response = await fetch('/api/mysql/auth/register', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    });
-    const result = await response.json().catch(() => ({})) as RegistrationResult;
-    return response.ok ? result : { error: result.error || 'Registration could not be submitted.' };
+    return (await postRegistration('/api/mysql/auth/register', input)).result;
   } catch {
     return { error: 'The registration service is unavailable.' };
   }
 }
 
-/**
- * Creates a database-native exporter account and company application. MySQL
- * registrations use the server route; Supabase retains its current Auth flow.
- */
-export async function registerExporter(input: RegistrationInput): Promise<RegistrationResult> {
-  if (getConfiguredPortalBackend() === 'mysql') return registerMySqlExporter(input);
+/** Client-side Supabase flow used only when the server route is not configured. */
+async function registerSupabaseExporterInBrowser(input: RegistrationInput): Promise<RegistrationResult> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return { error: 'The database connection is not configured.' };
 
   const { representative, company, registration_number } = input;
   const password = representative.password?.trim();
-  if (!password || password.length < 6) {
-    return { error: 'Use a password with at least 6 characters.' };
+  if (!password || password.length < 8) {
+    return { error: 'Use a password with at least 8 characters.' };
   }
 
   const email = representative.email.trim().toLowerCase();
@@ -65,7 +65,8 @@ export async function registerExporter(input: RegistrationInput): Promise<Regist
 
   // With email confirmation enabled Supabase returns no session, which cannot
   // satisfy the own-row RLS policy. The setup guide instructs the project owner
-  // to disable confirmation for the demo or add a server-side registration flow.
+  // to disable confirmation for the demo or configure the service role key so
+  // the server-side registration route is used instead.
   if (!signUp.session) {
     return {
       error: 'Please confirm your email, then sign in. The portal administrator must complete your profile setup.',
@@ -168,4 +169,21 @@ export async function registerExporter(input: RegistrationInput): Promise<Regist
 
   await supabase.auth.signOut();
   return { user, company: saved };
+}
+
+/**
+ * Creates a database-native exporter account and company application. MySQL
+ * registrations use their server route; Supabase prefers the service-role
+ * server route and falls back to the browser flow when it is not configured.
+ */
+export async function registerExporter(input: RegistrationInput): Promise<RegistrationResult> {
+  if (getConfiguredPortalBackend() === 'mysql') return registerMySqlExporter(input);
+
+  try {
+    const { status, result } = await postRegistration('/api/register', input);
+    if (status !== 503) return result;
+  } catch {
+    // Network failure: try the browser flow below.
+  }
+  return registerSupabaseExporterInBrowser(input);
 }

@@ -7,7 +7,7 @@ import {
 } from './types';
 import { useAuth } from './auth';
 import {
-  DataStoreContext, DataStoreContextType, MasterCategory, ReviewDecision,
+  DataStoreContext, DataStoreContextType, MasterCategory, MutationResult, NewUserInput, RegistrationInput, ReviewDecision,
 } from './data-store';
 
 interface PortalSnapshot {
@@ -26,6 +26,10 @@ interface PortalSnapshot {
 const POLL_INTERVAL_MS = 15_000;
 const nowISO = () => new Date().toISOString();
 const localId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+const ok = <T,>(data?: T): MutationResult<T> => ({ data });
+const fail = <T,>(error: unknown, fallback: string): MutationResult<T> => ({
+  error: error instanceof Error && error.message ? error.message : fallback,
+});
 
 const emptySnapshot = (): PortalSnapshot => ({
   users: [], companies: [], exportRecords: [], complaints: [],
@@ -35,44 +39,6 @@ const emptySnapshot = (): PortalSnapshot => ({
   },
   auditLogs: [], notifications: [], provinceApiSources: [], provinceSyncLogs: [], provinceDataRecords: [],
 });
-
-function localCompany(input: { company: Partial<Company>; representative: { full_name: string; email: string; mobile: string }; registration_number: string }, ownerId: string): Company {
-  const { company, representative } = input;
-  return {
-    id: localId('company'), owner_id: ownerId, legal_name: company.legal_name || '', trading_name: company.trading_name,
-    company_type: company.company_type || 'Private Limited', ntn: company.ntn || '', secp_number: company.secp_number || '',
-    registration_date: company.registration_date || nowISO().slice(0, 10), address: company.address || '', province: company.province || 'Punjab',
-    district: company.district || '', city: company.city || '', website: company.website, email: company.email || representative.email,
-    phone: company.phone || representative.mobile, nature_of_business: company.nature_of_business || 'Agricultural Export',
-    main_export_categories: company.main_export_categories || [], registration_number: input.registration_number,
-    status: 'submitted', tdap_review_status: 'pending', nafsa_review_status: 'not_initiated',
-    nadra_status: 'pending', secp_status: 'pending', ntn_status: 'pending', created_at: nowISO(), updated_at: nowISO(),
-  };
-}
-
-function localExportRecord(input: Partial<ExportRecord>, actor: User | null, companies: Company[], records: ExportRecord[]): ExportRecord {
-  const maxNumber = records.reduce((max, record) => {
-    const match = record.consignment_number.match(/(\d+)$/);
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 2025000);
-  const company = companies.find(item => item.owner_id === actor?.id) ?? companies[0];
-  return {
-    id: localId('export'), consignment_number: `EXP-${maxNumber + 1}`, exporter_id: actor?.id || '', company_id: company?.id || '',
-    product: input.product || '', product_category: input.product_category || 'Other Agricultural', hs_code: input.hs_code || '9999.99',
-    description: input.description || '', quantity: input.quantity ?? 0, unit: input.unit || 'Metric Tons', estimated_value: input.estimated_value ?? 0,
-    currency: input.currency || 'USD', country_of_origin: 'Pakistan', province_of_production: input.province_of_production || 'Punjab',
-    district_of_production: input.district_of_production || '', crop_year: input.crop_year, batch_number: input.batch_number || '',
-    packaging_type: input.packaging_type || 'Carton Boxes', num_packages: input.num_packages ?? 0,
-    intended_shipment_date: input.intended_shipment_date || '', buyer_name: input.buyer_name || '', buyer_company: input.buyer_company || '',
-    buyer_country: input.buyer_country || '', buyer_address: input.buyer_address || '', buyer_contact: input.buyer_contact || '',
-    buyer_email: input.buyer_email || '', buyer_phone: input.buyer_phone || '', purchase_order: input.purchase_order || '',
-    destination_country: input.destination_country || '', destination_port: input.destination_port || '', port_of_departure: input.port_of_departure || 'Karachi Port',
-    transport_mode: input.transport_mode || 'Sea', shipping_company: input.shipping_company || '', container_number: input.container_number || '',
-    bill_of_lading: input.bill_of_lading || '', expected_departure: input.expected_departure || '', expected_arrival: input.expected_arrival || '',
-    status: input.status || 'submitted', tdap_review_status: input.tdap_review_status, nafsa_review_status: input.nafsa_review_status,
-    documents: input.documents || [], created_at: nowISO(), updated_at: nowISO(),
-  };
-}
 
 function localComplaint(input: Partial<Complaint> & { tracking_number: string }): Complaint {
   const createdAt = nowISO();
@@ -88,42 +54,49 @@ function localComplaint(input: Partial<Complaint> & { tracking_number: string })
   };
 }
 
-async function responseSnapshot(response: Response): Promise<PortalSnapshot> {
-  const body = await response.json().catch(() => ({})) as PortalSnapshot & { error?: string };
+async function parseJson<T>(response: Response): Promise<T & { error?: string }> {
+  const body = await response.json().catch(() => ({})) as T & { error?: string };
   if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
   return body;
 }
 
-/** MySQL transport that retains the existing synchronous useDataStore contract. */
+/** MySQL transport: every mutation is executed by a server route and the snapshot is refreshed from the response. */
 export function MySqlDataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [snapshot, setSnapshot] = useState<PortalSnapshot>(emptySnapshot);
   const [isLoaded, setIsLoaded] = useState(false);
   const mounted = useRef(true);
+  const snapshotRef = useRef(snapshot);
 
-  useEffect(() => () => { mounted.current = false; }, []);
+  useEffect(() => { snapshotRef.current = snapshot; }, [snapshot]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const reload = useCallback(async () => {
     const response = await fetch('/api/mysql/portal', { cache: 'no-store', credentials: 'same-origin' });
-    const next = await responseSnapshot(response);
+    const next = await parseJson<PortalSnapshot>(response);
+    snapshotRef.current = next;
     if (mounted.current) setSnapshot(next);
   }, []);
 
-  const run = useCallback(async (operation: string, payload?: unknown) => {
-    const response = await fetch('/api/mysql/portal', {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ operation, payload }),
-    });
-    const next = await responseSnapshot(response);
-    if (mounted.current) setSnapshot(next);
-  }, []);
-
-  const dispatch = useCallback((operation: string, payload?: unknown) => {
-    void run(operation, payload).catch(error => {
+  const run = useCallback(async (operation: string, payload?: unknown): Promise<MutationResult> => {
+    try {
+      const response = await fetch('/api/mysql/portal', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation, payload }),
+      });
+      const next = await parseJson<PortalSnapshot>(response);
+      snapshotRef.current = next;
+      if (mounted.current) setSnapshot(next);
+      return ok();
+    } catch (error) {
       console.error(`[mysql-data-store:${operation}]`, error);
       void reload().catch(reloadError => console.error('[mysql-data-store:reload]', reloadError));
-    });
-  }, [reload, run]);
+      return fail(error, 'The change could not be saved.');
+    }
+  }, [reload]);
 
   useEffect(() => {
     let active = true;
@@ -136,174 +109,127 @@ export function MySqlDataProvider({ children }: { children: ReactNode }) {
     return () => { active = false; window.clearInterval(intervalId); };
   }, [reload, user?.id]);
 
-  const addUser = useCallback((input: { full_name: string; email: string; role: string; institution?: string; password?: string }): User => {
-    const created: User = {
+  const addUser = useCallback(async (input: NewUserInput): Promise<MutationResult<User>> => {
+    const result = await run('create_user', input);
+    if (result.error) return { error: result.error };
+    const created = snapshotRef.current.users.find(item => item.email.toLowerCase() === input.email.trim().toLowerCase());
+    return ok(created ?? {
       id: localId('user'), email: input.email, full_name: input.full_name, role: input.role as UserRole,
       institution: input.institution, is_active: true, created_at: nowISO(),
-    };
-    setSnapshot(previous => ({ ...previous, users: [created, ...previous.users] }));
-    dispatch('create_user', input);
-    return created;
-  }, [dispatch]);
-
-  const updateUser = useCallback((id: string, patch: Partial<User>) => {
-    setSnapshot(previous => ({ ...previous, users: previous.users.map(item => item.id === id ? { ...item, ...patch } : item) }));
-    dispatch('update_user', { id, ...patch });
-  }, [dispatch]);
-
-  const deleteUser = useCallback((id: string) => {
-    setSnapshot(previous => ({ ...previous, users: previous.users.filter(item => item.id !== id) }));
-    dispatch('delete_user', { id });
-  }, [dispatch]);
-
-  const submitRegistration = useCallback((input: {
-    company: Partial<Company>;
-    representative: { full_name: string; email: string; username: string; password?: string; cnic: string; designation: string; mobile: string };
-    registration_number: string;
-  }) => {
-    const createdUser: User = { id: localId('user'), email: input.representative.email, full_name: input.representative.full_name, role: 'exporter', is_active: true, created_at: nowISO() };
-    const createdCompany = localCompany(input, createdUser.id);
-    void fetch('/api/mysql/auth/register', {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    }).then(response => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return reload();
-    }).catch(error => console.error('[mysql-data-store:register]', error));
-    return { user: createdUser, company: createdCompany };
-  }, [reload]);
-
-  const reviewRegistration = useCallback((id: string, decision: ReviewDecision, remarks?: string) => {
-    dispatch('review_registration', { id, decision, remarks });
-  }, [dispatch]);
-
-  const addExportRecord = useCallback((input: Partial<ExportRecord>): ExportRecord => {
-    const created = localExportRecord(input, user, snapshot.companies, snapshot.exportRecords);
-    setSnapshot(previous => ({ ...previous, exportRecords: [created, ...previous.exportRecords] }));
-    dispatch('create_export_record', input);
-    return created;
-  }, [dispatch, snapshot.companies, snapshot.exportRecords, user]);
-
-  const updateExportRecord = useCallback((id: string, patch: Partial<ExportRecord>) => {
-    setSnapshot(previous => ({ ...previous, exportRecords: previous.exportRecords.map(item => item.id === id ? { ...item, ...patch, updated_at: nowISO() } : item) }));
-    dispatch('update_export_record', { id, patch });
-  }, [dispatch]);
-
-  const deleteExportRecord = useCallback((id: string) => {
-    setSnapshot(previous => ({ ...previous, exportRecords: previous.exportRecords.filter(item => item.id !== id) }));
-    dispatch('delete_export_record', { id });
-  }, [dispatch]);
-
-  const reviewExportRecord = useCallback((id: string, decision: ReviewDecision, remarks?: string) => {
-    dispatch('review_export_record', { id, decision, remarks });
-  }, [dispatch]);
-
-  const addComplaint = useCallback((input: Partial<Complaint> & { tracking_number: string }): Complaint => {
-    const created = localComplaint(input);
-    setSnapshot(previous => ({ ...previous, complaints: [created, ...previous.complaints] }));
-    void fetch('/api/mysql/complaints', {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    }).then(response => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return reload();
-    }).catch(error => {
-      console.error('[mysql-data-store:add-complaint]', error);
-      setSnapshot(previous => ({ ...previous, complaints: previous.complaints.filter(item => item.id !== created.id) }));
     });
-    return created;
+  }, [run]);
+
+  const updateUser = useCallback((id: string, patch: Partial<User>) => run('update_user', { id, ...patch }), [run]);
+  const deleteUser = useCallback((id: string) => run('delete_user', { id }), [run]);
+
+  const submitRegistration = useCallback(async (input: RegistrationInput): Promise<MutationResult<{ user: User; company: Company }>> => {
+    try {
+      const response = await fetch('/api/mysql/auth/register', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+      });
+      const body = await parseJson<{ user: User; company: Company }>(response);
+      void reload().catch(() => undefined);
+      return ok({ user: body.user, company: body.company });
+    } catch (error) {
+      return fail(error, 'Registration could not be submitted.');
+    }
   }, [reload]);
 
-  const updateComplaint = useCallback((id: string, patch: Partial<Complaint>) => {
-    setSnapshot(previous => ({ ...previous, complaints: previous.complaints.map(item => item.id === id ? { ...item, ...patch, updated_at: nowISO() } : item) }));
-    dispatch('update_complaint', { id, patch });
-  }, [dispatch]);
+  const reviewRegistration = useCallback((id: string, decision: ReviewDecision, remarks?: string) => run('review_registration', { id, decision, remarks }), [run]);
+  const resubmitRegistration = useCallback((id: string, patch?: Partial<Company>) => run('resubmit_registration', { id, patch }), [run]);
 
-  const resolveComplaint = useCallback((id: string, resolutionSummary: string) => {
-    dispatch('resolve_complaint', { id, resolution_summary: resolutionSummary });
-  }, [dispatch]);
+  const addExportRecord = useCallback(async (input: Partial<ExportRecord>): Promise<MutationResult<ExportRecord>> => {
+    const before = new Set(snapshotRef.current.exportRecords.map(item => item.id));
+    const result = await run('create_export_record', input);
+    if (result.error) return { error: result.error };
+    const created = snapshotRef.current.exportRecords.find(item => !before.has(item.id) && item.exporter_id === user?.id)
+      ?? snapshotRef.current.exportRecords.find(item => !before.has(item.id));
+    if (!created) return { error: 'The export record was saved but could not be loaded. Refresh the page.' };
+    return ok(created);
+  }, [run, user?.id]);
 
-  const escalateComplaint = useCallback((id: string) => {
-    dispatch('escalate_complaint', { id });
-  }, [dispatch]);
+  const updateExportRecord = useCallback((id: string, patch: Partial<ExportRecord>) => run('update_export_record', { id, patch }), [run]);
+  const deleteExportRecord = useCallback((id: string) => run('delete_export_record', { id }), [run]);
+  const reviewExportRecord = useCallback((id: string, decision: ReviewDecision, remarks?: string) => run('review_export_record', { id, decision, remarks }), [run]);
 
-  const addComplaintNote = useCallback((id: string, note: string) => {
-    dispatch('add_complaint_note', { id, note });
-  }, [dispatch]);
+  const addComplaint = useCallback(async (input: Partial<Complaint> & { tracking_number: string }): Promise<MutationResult<Complaint>> => {
+    try {
+      const response = await fetch('/api/mysql/complaints', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+      });
+      await parseJson(response);
+      void reload().catch(() => undefined);
+      return ok(localComplaint(input));
+    } catch (error) {
+      return fail(error, 'Complaint could not be submitted.');
+    }
+  }, [reload]);
 
-  const addMasterItem = useCallback((category: MasterCategory, value: string) => {
-    setSnapshot(previous => ({ ...previous, masterItems: { ...previous.masterItems, [category]: [...previous.masterItems[category], value] } }));
-    dispatch('create_master_item', { category, value });
-  }, [dispatch]);
+  const updateComplaint = useCallback((id: string, patch: Partial<Complaint>) => run('update_complaint', { id, patch }), [run]);
+  const resolveComplaint = useCallback((id: string, resolutionSummary: string) => run('resolve_complaint', { id, resolution_summary: resolutionSummary }), [run]);
+  const escalateComplaint = useCallback((id: string) => run('escalate_complaint', { id }), [run]);
+  const addComplaintNote = useCallback((id: string, note: string) => run('add_complaint_note', { id, note }), [run]);
 
-  const updateMasterItem = useCallback((category: MasterCategory, index: number, value: string) => {
-    const oldValue = snapshot.masterItems[category][index];
-    if (oldValue === undefined) return;
-    setSnapshot(previous => ({ ...previous, masterItems: { ...previous.masterItems, [category]: previous.masterItems[category].map((item, itemIndex) => itemIndex === index ? value : item) } }));
-    dispatch('update_master_item', { category, old_value: oldValue, value });
-  }, [dispatch, snapshot.masterItems]);
+  const addMasterItem = useCallback((category: MasterCategory, value: string) => run('create_master_item', { category, value }), [run]);
+  const updateMasterItem = useCallback(async (category: MasterCategory, index: number, value: string): Promise<MutationResult> => {
+    const oldValue = snapshotRef.current.masterItems[category][index];
+    if (oldValue === undefined) return { error: 'Master-data item was not found.' };
+    return run('update_master_item', { category, old_value: oldValue, value });
+  }, [run]);
+  const deleteMasterItem = useCallback(async (category: MasterCategory, index: number): Promise<MutationResult> => {
+    const oldValue = snapshotRef.current.masterItems[category][index];
+    if (oldValue === undefined) return { error: 'Master-data item was not found.' };
+    return run('delete_master_item', { category, old_value: oldValue, value: oldValue });
+  }, [run]);
 
-  const deleteMasterItem = useCallback((category: MasterCategory, index: number) => {
-    const oldValue = snapshot.masterItems[category][index];
-    if (oldValue === undefined) return;
-    setSnapshot(previous => ({ ...previous, masterItems: { ...previous.masterItems, [category]: previous.masterItems[category].filter((_, itemIndex) => itemIndex !== index) } }));
-    dispatch('delete_master_item', { category, old_value: oldValue, value: oldValue });
-  }, [dispatch, snapshot.masterItems]);
-
-  const addProvinceApiSource = useCallback((input: Partial<ProvinceApiSource>): ProvinceApiSource => {
-    const created: ProvinceApiSource = {
+  const addProvinceApiSource = useCallback(async (input: Partial<ProvinceApiSource>): Promise<MutationResult<ProvinceApiSource>> => {
+    const before = new Set(snapshotRef.current.provinceApiSources.map(item => item.id));
+    const result = await run('create_province_source', input);
+    if (result.error) return { error: result.error };
+    const created = snapshotRef.current.provinceApiSources.find(item => !before.has(item.id));
+    return ok(created ?? {
       id: localId('source'), name: input.name || 'New API Source', province: input.province || 'Punjab', system_name: input.system_name || '',
       api_url: input.api_url || '', api_key: input.api_key, cron_interval: input.cron_interval || 'daily', cron_expression: input.cron_expression,
       is_active: input.is_active ?? true, total_records_pulled: 0, created_at: nowISO(), updated_at: nowISO(), created_by: user?.id || '',
-    };
-    setSnapshot(previous => ({ ...previous, provinceApiSources: [...previous.provinceApiSources, created] }));
-    dispatch('create_province_source', input);
-    return created;
-  }, [dispatch, user?.id]);
-
-  const updateProvinceApiSource = useCallback((id: string, patch: Partial<ProvinceApiSource>) => {
-    setSnapshot(previous => ({ ...previous, provinceApiSources: previous.provinceApiSources.map(item => item.id === id ? { ...item, ...patch, updated_at: nowISO() } : item) }));
-    dispatch('update_province_source', { id, patch });
-  }, [dispatch]);
-
-  const deleteProvinceApiSource = useCallback((id: string) => {
-    setSnapshot(previous => ({
-      ...previous,
-      provinceApiSources: previous.provinceApiSources.filter(item => item.id !== id),
-      provinceSyncLogs: previous.provinceSyncLogs.filter(item => item.source_id !== id),
-      provinceDataRecords: previous.provinceDataRecords.filter(item => item.source_id !== id),
-    }));
-    dispatch('delete_province_source', { id });
-  }, [dispatch]);
-
-  const triggerProvinceSync = useCallback((sourceId: string) => {
-    setSnapshot(previous => ({ ...previous, provinceApiSources: previous.provinceApiSources.map(item => item.id === sourceId ? { ...item, last_sync_status: 'running' } : item) }));
-    void fetch('/api/mysql/province-sync', {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceId }),
-    }).then(response => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return reload();
-    }).catch(error => {
-      console.error('[mysql-data-store:province-sync]', error);
-      void reload().catch(reloadError => console.error('[mysql-data-store:reload]', reloadError));
     });
+  }, [run, user?.id]);
+
+  const updateProvinceApiSource = useCallback((id: string, patch: Partial<ProvinceApiSource>) => run('update_province_source', { id, patch }), [run]);
+  const deleteProvinceApiSource = useCallback((id: string) => run('delete_province_source', { id }), [run]);
+
+  const triggerProvinceSync = useCallback(async (sourceId: string): Promise<MutationResult> => {
+    setSnapshot(previous => ({ ...previous, provinceApiSources: previous.provinceApiSources.map(item => item.id === sourceId ? { ...item, last_sync_status: 'running' } : item) }));
+    try {
+      const response = await fetch('/api/mysql/province-sync', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceId }),
+      });
+      await parseJson(response);
+      await reload();
+      return ok();
+    } catch (error) {
+      void reload().catch(() => undefined);
+      return fail(error, 'The provincial sync failed.');
+    }
   }, [reload]);
 
-  const markAllNotificationsRead = useCallback(() => {
-    setSnapshot(previous => ({ ...previous, notifications: previous.notifications.map(item => ({ ...item, is_read: true })) }));
-    dispatch('mark_notifications_read');
-  }, [dispatch]);
+  const markAllNotificationsRead = useCallback(() => run('mark_notifications_read'), [run]);
 
-  const resetData = useCallback(() => {
-    console.warn('[mysql-data-store:reset] Demo reset is unavailable for the MySQL production backend.');
-  }, []);
+  const resetData = useCallback(async (): Promise<MutationResult> => ({
+    error: 'Demo reset is unavailable for the MySQL production backend.',
+  }), []);
+
+  const refresh = useCallback(async () => {
+    await reload().catch(error => console.error('[mysql-data-store:refresh]', error));
+  }, [reload]);
 
   const value: DataStoreContextType = {
     isLoaded, ...snapshot,
-    addUser, updateUser, deleteUser, submitRegistration, reviewRegistration,
+    addUser, updateUser, deleteUser, submitRegistration, reviewRegistration, resubmitRegistration,
     addExportRecord, updateExportRecord, deleteExportRecord, reviewExportRecord,
     addComplaint, updateComplaint, resolveComplaint, escalateComplaint, addComplaintNote,
     addMasterItem, updateMasterItem, deleteMasterItem,
     addProvinceApiSource, updateProvinceApiSource, deleteProvinceApiSource, triggerProvinceSync,
-    markAllNotificationsRead, resetData,
+    markAllNotificationsRead, resetData, refresh,
   };
 
   return <DataStoreContext.Provider value={value}>{children}</DataStoreContext.Provider>;

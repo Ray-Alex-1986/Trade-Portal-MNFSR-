@@ -567,6 +567,29 @@ async function reviewRegistration(actor: User, input: Input) {
   });
 }
 
+async function resubmitRegistration(actor: User, input: Input) {
+  const id = requiredText(input, 'id');
+  const patch = asInput(input.patch);
+  await withMySqlTransaction(async connection => {
+    const [rows] = await connection.execute<Row[]>('SELECT * FROM companies WHERE id = ? AND deleted_at IS NULL LIMIT 1', [id]);
+    const company = rows[0];
+    if (!company) throw new MySqlPortalError('Registration was not found.', 404);
+    if (string(company, 'owner_id') !== actor.id && actor.role !== 'super_admin') throw new MySqlPortalError('Only the company owner can resubmit this registration.', 403);
+    if (!['additional_info_required', 'rejected', 'draft'].includes(string(company, 'status'))) throw new MySqlPortalError('Only returned or draft registrations can be resubmitted.');
+    const allowed = ['legal_name', 'trading_name', 'company_type', 'ntn', 'secp_number', 'registration_date', 'address', 'province', 'district', 'city', 'website', 'email', 'phone', 'nature_of_business', 'main_export_categories'];
+    const fields: string[] = ["status = 'submitted'", "tdap_review_status = 'pending'", "nafsa_review_status = 'not_initiated'"];
+    const values: unknown[] = [];
+    for (const field of allowed) {
+      if (patch[field] === undefined) continue;
+      fields.push(`${field} = ?`);
+      values.push(field === 'main_export_categories' ? JSON.stringify(Array.isArray(patch[field]) ? patch[field] : []) : (patch[field] === '' ? null : patch[field]));
+    }
+    await connection.execute(`UPDATE companies SET ${fields.join(', ')}, updated_by = ? WHERE id = ?`, sqlValues([...values, actor.id, id]));
+    await notifySuperAdmins(connection, 'Registration Resubmitted', `${string(company, 'legal_name')} (${string(company, 'registration_number')}) has resubmitted its registration for review.`, 'info', '/admin/reviews');
+    await addAudit(connection, actor, 'Resubmit Registration', 'Registration', string(company, 'registration_number'), string(company, 'status'), 'submitted');
+  });
+}
+
 function exportFields(input: Input): { fields: string[]; values: unknown[] } {
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -638,6 +661,9 @@ async function updateExportRecord(actor: User, input: Input) {
     const record = await requireOwnedExport(connection, id, actor);
     const fields = exportFields(patch);
     if (!fields.fields.length) throw new MySqlPortalError('No supported export fields were supplied.');
+    if (patch.status === 'submitted' && string(record, 'status') !== 'submitted') {
+      fields.fields.push("tdap_review_status = 'pending'", "nafsa_review_status = 'not_initiated'");
+    }
     await connection.execute(`UPDATE export_records SET ${fields.fields.join(', ')}, updated_by = ? WHERE id = ?`, sqlValues([...fields.values, actor.id, id]));
     await notifyUser(connection, actor.id, 'Export Record Updated', `Your export record ${string(record, 'consignment_number')} has been updated.`, 'info', '/dashboard/exports');
     await addAudit(connection, actor, 'Update Record', 'Export Records', string(record, 'consignment_number'), undefined, JSON.stringify(patch).slice(0, 200));
@@ -813,6 +839,7 @@ export async function executeMySqlPortalOperation(request: Request, operation: s
     case 'update_user': return updateUser(actor, input);
     case 'delete_user': return deleteUser(actor, input);
     case 'review_registration': return reviewRegistration(actor, input);
+    case 'resubmit_registration': return resubmitRegistration(actor, input);
     case 'create_export_record': return createExportRecord(actor, input);
     case 'update_export_record': return updateExportRecord(actor, input);
     case 'delete_export_record': return deleteExportRecord(actor, input);

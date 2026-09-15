@@ -5,7 +5,8 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import RoleGuard from '@/components/auth/RoleGuard';
 import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth';
-import { getReviewStage, ROUTE_ROLES } from '@/lib/permissions';
+import { getReviewStage, isInReviewQueue, ROUTE_ROLES } from '@/lib/permissions';
+import { useToast } from '@/components/ui/Toast';
 import { formatNumber, getStatusColor } from '@/lib/utils';
 import { Users, Package, FileCheck, AlertTriangle, TrendingUp, Globe, Clock, CheckCircle, BarChart3, Shield, RotateCcw, Plug } from 'lucide-react';
 import Link from 'next/link';
@@ -109,8 +110,25 @@ export default function AdminDashboardPage() {
     provinceApiSources, provinceDataRecords, provinceSyncLogs,
   } = useDataStore();
   const { user } = useAuth();
+  const { showToast, ToastView } = useToast();
+  const [resetting, setResetting] = useState(false);
   const myStage = getReviewStage(user?.role);
   const isSuperAdmin = user?.role === 'super_admin';
+
+  const handleResetDemoData = async () => {
+    if (!window.confirm('Reset all demo data to its initial state? This clears any changes you have made.')) return;
+    setResetting(true);
+    try {
+      const result = await resetData();
+      if (result.error) {
+        showToast(result.error, 'error');
+        return;
+      }
+      showToast('Demo data restored to its initial state.');
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const dashboard = useMemo(() => {
     const now = new Date();
@@ -126,18 +144,8 @@ export default function AdminDashboardPage() {
     const currentResolved = complaints.filter(item => dateInBounds(item.resolved_at, bounds.current));
     const previousResolved = complaints.filter(item => dateInBounds(item.resolved_at, bounds.previous));
 
-    const pendingFor = (items: typeof companies) => items.filter(company => {
-      if (isSuperAdmin) return ['submitted', 'under_nafsa_review', 'additional_info_required'].includes(company.status);
-      if (myStage === 'tdap') return company.status === 'submitted';
-      if (myStage === 'nafsa') return company.status === 'under_nafsa_review';
-      return ['submitted', 'under_nafsa_review'].includes(company.status);
-    });
-    const pendingExportsFor = (items: typeof exportRecords) => items.filter(record => {
-      if (isSuperAdmin) return ['submitted', 'under_nafsa_review', 'additional_info_required'].includes(record.status);
-      if (myStage === 'tdap') return record.status === 'submitted';
-      if (myStage === 'nafsa') return record.status === 'under_nafsa_review';
-      return ['submitted', 'under_nafsa_review'].includes(record.status);
-    });
+    const pendingFor = (items: typeof companies) => items.filter(company => isInReviewQueue(user?.role, company.status));
+    const pendingExportsFor = (items: typeof exportRecords) => items.filter(record => isInReviewQueue(user?.role, record.status));
     const usdValue = (items: typeof exportRecords) => items.reduce(
       (sum, record) => sum + Number(record.estimated_value || 0) * (FX_TO_USD[record.currency] ?? 1),
       0,
@@ -216,7 +224,7 @@ export default function AdminDashboardPage() {
         { label: 'PSI Compliance Rate', value: formatValue(currentPsi, '%'), icon: FileCheck, color: 'text-green-600 bg-green-50', trend: trend(currentPsi, previousPsi) },
       ],
     };
-  }, [companies, exportRecords, complaints, users, period, isSuperAdmin, myStage]);
+  }, [companies, exportRecords, complaints, users, period, isSuperAdmin, user?.role]);
 
   const dashTitle = isSuperAdmin ? 'MNFSR Super Admin Dashboard'
     : myStage === 'tdap' ? 'TDAP Dashboard'
@@ -231,6 +239,7 @@ export default function AdminDashboardPage() {
   return (
     <DashboardLayout>
       <RoleGuard allow={ROUTE_ROLES['/admin']}>
+        <ToastView />
         <div className="space-y-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
@@ -239,8 +248,8 @@ export default function AdminDashboardPage() {
             </div>
             <div className="flex gap-3 items-center">
               {isSuperAdmin && (
-                <button onClick={() => { if (window.confirm('Reset all demo data to its initial state? This clears any changes you have made.')) resetData(); }} className="btn-outline flex items-center gap-2 text-sm" title="Restore the demo dataset">
-                  <RotateCcw className="w-4 h-4" /> Reset Demo Data
+                <button onClick={handleResetDemoData} disabled={resetting} className="btn-outline flex items-center gap-2 text-sm disabled:opacity-50" title="Restore the demo dataset">
+                  <RotateCcw className="w-4 h-4" /> {resetting ? 'Resetting...' : 'Reset Demo Data'}
                 </button>
               )}
               <select value={period} onChange={event => setPeriod(event.target.value as Period)} className="input-field w-40" aria-label="Dashboard reporting period">

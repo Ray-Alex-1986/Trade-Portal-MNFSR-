@@ -111,7 +111,7 @@ export default function ShipChatBot() {
         <div
           role="dialog"
           aria-label="Export Assistant chat"
-          className="chat-panel-enter fixed bottom-24 right-6 z-50 flex flex-col w-[380px] max-w-[calc(100vw-3rem)] h-[540px] max-h-[calc(100vh-8rem)] bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden"
+          className="chat-panel-enter fixed bottom-24 right-6 z-30 flex flex-col w-[380px] max-w-[calc(100vw-3rem)] h-[540px] max-h-[calc(100vh-8rem)] bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden"
         >
           {/* Header */}
           <div className="bg-gradient-to-r from-gov-green-600 to-gov-green-500 text-white px-4 py-3 flex items-center gap-3 flex-shrink-0">
@@ -217,7 +217,7 @@ export default function ShipChatBot() {
       <button
         onClick={handleToggle}
         aria-label={open ? 'Close Export Assistant chat' : 'Open Export Assistant chat'}
-        className="fixed bottom-6 right-6 z-50 group"
+        className="fixed bottom-6 right-6 z-30 group"
       >
         {/* Waves rippling under the ship */}
         {!open && (

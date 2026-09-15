@@ -4,6 +4,7 @@ import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import RoleGuard from '@/components/auth/RoleGuard';
 import { useDataStore } from '@/lib/data-store';
+import { useToast } from '@/components/ui/Toast';
 import { ROUTE_ROLES } from '@/lib/permissions';
 import { ProvinceApiSource, CronInterval } from '@/lib/types';
 import { formatDateTime, getStatusColor } from '@/lib/utils';
@@ -43,6 +44,10 @@ export default function ProvinceIntegrationsPage() {
   } = useDataStore();
   const provinces = masterItems.provinces;
 
+  const { showToast, ToastView } = useToast();
+  const [busy, setBusy] = useState(false);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [formError, setFormError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingSource, setEditingSource] = useState<ProvinceApiSource | null>(null);
   const [expandedSource, setExpandedSource] = useState<string | null>(null);
@@ -60,6 +65,7 @@ export default function ProvinceIntegrationsPage() {
 
   const openAdd = () => {
     setEditingSource(null);
+    setFormError('');
     setFormName(''); setFormProvince(provinces[0] ?? ''); setFormSystem(''); setFormUrl('');
     setFormApiKey(''); setFormCron('daily'); setFormCronExpr(''); setFormActive(true);
     setShowForm(true);
@@ -67,39 +73,102 @@ export default function ProvinceIntegrationsPage() {
 
   const openEdit = (src: ProvinceApiSource) => {
     setEditingSource(src);
+    setFormError('');
     setFormName(src.name); setFormProvince(src.province); setFormSystem(src.system_name);
     setFormUrl(src.api_url); setFormApiKey(src.api_key || ''); setFormCron(src.cron_interval);
     setFormCronExpr(src.cron_expression || ''); setFormActive(src.is_active);
     setShowForm(true);
   };
 
-  const handleSave = () => {
-    if (!formName.trim() || !formProvince || !formUrl.trim()) return;
-    if (editingSource) {
-      updateProvinceApiSource(editingSource.id, {
-        name: formName, province: formProvince, system_name: formSystem,
-        api_url: formUrl, api_key: formApiKey || undefined,
-        cron_interval: formCron, cron_expression: formCron === 'custom' ? formCronExpr : undefined,
-        is_active: formActive,
-      });
-    } else {
-      addProvinceApiSource({
-        name: formName, province: formProvince, system_name: formSystem,
-        api_url: formUrl, api_key: formApiKey || undefined,
-        cron_interval: formCron, cron_expression: formCron === 'custom' ? formCronExpr : undefined,
-        is_active: formActive,
-      });
+  /** Province endpoints must be public HTTPS URLs; the sync proxy rejects anything else. */
+  const validateForm = (): string | null => {
+    if (!formName.trim()) return 'Enter a source name.';
+    if (!formProvince) return 'Select a province.';
+    if (!formUrl.trim()) return 'Enter the API URL.';
+    let parsed: URL;
+    try {
+      parsed = new URL(formUrl.trim());
+    } catch {
+      return 'Enter a full API URL including https://';
     }
-    setShowForm(false);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return 'Only HTTP and HTTPS API URLs are supported.';
+    if (parsed.username || parsed.password) return 'Remove credentials from the API URL and use the API key field instead.';
+    if (formCron === 'custom' && !formCronExpr.trim()) return 'Enter a cron expression for the custom schedule.';
+    return null;
   };
 
-  const handleSync = (sourceId: string) => {
-    triggerProvinceSync(sourceId);
+  const handleSave = async () => {
+    const problem = validateForm();
+    if (problem) {
+      setFormError(problem);
+      return;
+    }
+    setFormError('');
+    const payload = {
+      name: formName.trim(), province: formProvince, system_name: formSystem.trim(),
+      api_url: formUrl.trim(), api_key: formApiKey.trim() || undefined,
+      cron_interval: formCron, cron_expression: formCron === 'custom' ? formCronExpr.trim() : undefined,
+      is_active: formActive,
+    };
+    setBusy(true);
+    try {
+      const result = editingSource
+        ? await updateProvinceApiSource(editingSource.id, payload)
+        : await addProvinceApiSource(payload);
+      if (result.error) {
+        setFormError(result.error);
+        return;
+      }
+      showToast(editingSource ? `Source "${payload.name}" updated.` : `Source "${payload.name}" created.`);
+      setShowForm(false);
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    deleteProvinceApiSource(id);
-    setDeleteConfirm(null);
+  const handleSync = async (sourceId: string) => {
+    const source = provinceApiSources.find(item => item.id === sourceId);
+    setSyncingId(sourceId);
+    try {
+      const result = await triggerProvinceSync(sourceId);
+      if (result.error) {
+        showToast(result.error, 'error');
+        return;
+      }
+      showToast(`Sync completed for ${source?.name ?? 'the source'}.`);
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    const source = provinceApiSources.find(item => item.id === id);
+    setBusy(true);
+    try {
+      const result = await deleteProvinceApiSource(id);
+      if (result.error) {
+        showToast(result.error, 'error');
+        return;
+      }
+      showToast(`Source "${source?.name ?? ''}" deleted with its sync history.`);
+      setDeleteConfirm(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleToggleActive = async (source: ProvinceApiSource) => {
+    setBusy(true);
+    try {
+      const result = await updateProvinceApiSource(source.id, { is_active: !source.is_active });
+      if (result.error) {
+        showToast(result.error, 'error');
+        return;
+      }
+      showToast(`Source "${source.name}" ${source.is_active ? 'paused' : 'activated'}.`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Stats
@@ -117,6 +186,7 @@ export default function ProvinceIntegrationsPage() {
   return (
     <DashboardLayout>
       <RoleGuard allow={ROUTE_ROLES['/admin/province-integrations']}>
+      <ToastView />
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -213,15 +283,16 @@ export default function ProvinceIntegrationsPage() {
                     syncLogs={provinceSyncLogs.filter(l => l.source_id === src.id)}
                     recordCount={provinceDataRecords.filter(r => r.source_id === src.id).length}
                     isExpanded={expandedSource === src.id}
-                    isSyncing={src.last_sync_status === 'running'}
+                    isSyncing={syncingId === src.id || src.last_sync_status === 'running'}
+                    isBusy={busy}
                     isDeleteConfirm={deleteConfirm === src.id}
                     onToggleExpand={() => setExpandedSource(expandedSource === src.id ? null : src.id)}
                     onEdit={() => openEdit(src)}
-                    onDelete={() => handleDelete(src.id)}
+                    onDelete={() => { void handleDelete(src.id); }}
                     onDeleteConfirm={() => setDeleteConfirm(src.id)}
                     onDeleteCancel={() => setDeleteConfirm(null)}
-                    onSync={() => handleSync(src.id)}
-                    onToggleActive={() => updateProvinceApiSource(src.id, { is_active: !src.is_active })}
+                    onSync={() => { void handleSync(src.id); }}
+                    onToggleActive={() => { void handleToggleActive(src); }}
                   />
                 ))}
                 {provinceApiSources.length === 0 && (
@@ -301,6 +372,12 @@ export default function ProvinceIntegrationsPage() {
                 </p>
               </div>
               <div className="p-6 space-y-4">
+                {formError && (
+                  <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>{formError}</span>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Source Name *</label>
                   <input
@@ -381,10 +458,10 @@ export default function ProvinceIntegrationsPage() {
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={!formName.trim() || !formProvince || !formUrl.trim()}
+                  disabled={busy || !formName.trim() || !formProvince || !formUrl.trim()}
                   className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingSource ? 'Update Source' : 'Add Source'}
+                  {busy ? 'Saving...' : editingSource ? 'Update Source' : 'Add Source'}
                 </button>
               </div>
             </div>
@@ -399,7 +476,7 @@ export default function ProvinceIntegrationsPage() {
 // ---------- Source Row Component ----------
 
 function SourceRow({
-  source, syncLogs, recordCount, isExpanded, isSyncing, isDeleteConfirm,
+  source, syncLogs, recordCount, isExpanded, isSyncing, isBusy, isDeleteConfirm,
   onToggleExpand, onEdit, onDelete, onDeleteConfirm, onDeleteCancel, onSync, onToggleActive,
 }: {
   source: ProvinceApiSource;
@@ -407,6 +484,7 @@ function SourceRow({
   recordCount: number;
   isExpanded: boolean;
   isSyncing: boolean;
+  isBusy: boolean;
   isDeleteConfirm: boolean;
   onToggleExpand: () => void;
   onEdit: () => void;
@@ -470,7 +548,9 @@ function SourceRow({
             {statusBadge}
             <button
               onClick={onToggleActive}
-              className={`text-xs mt-1 ${source.is_active ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-gray-600'}`}
+              disabled={isBusy}
+              title={source.is_active ? 'Pause this integration' : 'Activate this integration'}
+              className={`text-xs mt-1 disabled:opacity-50 ${source.is_active ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-gray-600'}`}
             >
               {source.is_active ? '● Active' : '○ Inactive'}
             </button>
@@ -480,9 +560,9 @@ function SourceRow({
           <div className="flex items-center justify-end gap-1">
             <button
               onClick={onSync}
-              disabled={isSyncing}
+              disabled={isSyncing || isBusy || !source.is_active}
               className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 disabled:opacity-50"
-              title="Sync Now"
+              title={source.is_active ? 'Sync Now' : 'Activate the source to sync'}
             >
               <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
             </button>

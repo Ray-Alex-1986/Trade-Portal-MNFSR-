@@ -268,6 +268,40 @@ export function getReviewStage(role: UserRole | null | undefined): 'tdap' | 'naf
   return null;
 }
 
+/**
+ * Resolve the stage a reviewer acts on for a specific application. Roles that
+ * can override the pipeline (super admin) act on whichever stage is still
+ * open: TDAP until it has been reviewed, then NAFSA. Everyone else only ever
+ * acts on their own stage.
+ */
+export function resolveReviewStage(
+  role: UserRole | null | undefined,
+  tdapReviewStatus: string | undefined,
+): 'tdap' | 'nafsa' | null {
+  if (!role) return null;
+  if (hasPermission(role, 'canOverrideReview')) {
+    return tdapReviewStatus === 'reviewed' ? 'nafsa' : 'tdap';
+  }
+  return getReviewStage(role);
+}
+
+/** Statuses that are waiting on a particular review stage. */
+export const STAGE_QUEUE_STATUSES: Record<'tdap' | 'nafsa', string[]> = {
+  tdap: ['submitted', 'under_tdap_review'],
+  nafsa: ['under_nafsa_review'],
+};
+
+/** Every status a super admin sees in the review queue. */
+export const OVERRIDE_QUEUE_STATUSES = ['submitted', 'under_tdap_review', 'under_nafsa_review', 'additional_info_required'];
+
+/** Whether a role may see the review queue for an item with the given status. */
+export function isInReviewQueue(role: UserRole | null | undefined, status: string): boolean {
+  if (!role) return false;
+  if (hasPermission(role, 'canOverrideReview')) return OVERRIDE_QUEUE_STATUSES.includes(status);
+  const stage = getReviewStage(role);
+  return stage ? STAGE_QUEUE_STATUSES[stage].includes(status) : false;
+}
+
 // ---------------------------------------------------------------------------
 // Navigation items per role
 // ---------------------------------------------------------------------------
@@ -328,16 +362,20 @@ export function getNavForRole(role: UserRole | null | undefined): NavItem[] {
       return [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { href: '/dashboard/exports', label: 'Export Records', icon: Package },
+        { href: '/dashboard/exporters', label: 'Verified Exporters', icon: Search },
         { href: '/dashboard/complaints', label: 'Complaints', icon: AlertTriangle },
-        { href: '/admin/notifications', label: 'Notifications', icon: Bell },
+        { href: '/complaints/submit', label: 'File Complaint', icon: FileCheck },
+        { href: '/dashboard/notifications', label: 'Notifications', icon: Bell },
       ];
 
     case 'buyer':
       return [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { href: '/dashboard/exporters', label: 'Verified Exporters', icon: Search },
-        { href: '/complaints/submit', label: 'File Complaint', icon: AlertTriangle },
+        { href: '/dashboard/complaints', label: 'My Complaints', icon: AlertTriangle },
+        { href: '/complaints/submit', label: 'File Complaint', icon: FileCheck },
         { href: '/complaints/track', label: 'Track Complaint', icon: Eye },
+        { href: '/dashboard/notifications', label: 'Notifications', icon: Bell },
       ];
 
     case 'exporter':
@@ -347,8 +385,20 @@ export function getNavForRole(role: UserRole | null | undefined): NavItem[] {
         { href: '/dashboard/exports', label: 'Export Records', icon: Package },
         { href: '/dashboard/exports/new', label: 'New Export Record', icon: FileText },
         { href: '/dashboard/complaints', label: 'My Complaints', icon: AlertTriangle },
+        { href: '/complaints/submit', label: 'File Complaint', icon: FileCheck },
+        { href: '/dashboard/notifications', label: 'Notifications', icon: Bell },
       ];
   }
+}
+
+/** Landing page for a role after sign-in. */
+export function getHomeForRole(role: UserRole | null | undefined): string {
+  return isAdminSection(role) ? '/admin' : '/dashboard';
+}
+
+/** Where the notification bell should take this role. */
+export function getNotificationsPath(role: UserRole | null | undefined): string {
+  return isAdminSection(role) ? '/admin/notifications' : '/dashboard/notifications';
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {
@@ -364,8 +414,16 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   auditor: 'Auditor / Viewer',
 };
 
-/** Roles allowed to access specific admin routes */
+const ALL_ROLES: UserRole[] = ['super_admin', 'moc_admin', 'tdap_admin', 'tdap_officer', 'nafsa_admin', 'nafsa_officer', 'tic', 'exporter', 'buyer', 'auditor'];
+
+/** Roles allowed to access specific routes */
 export const ROUTE_ROLES: Record<string, UserRole[]> = {
+  '/dashboard': ALL_ROLES,
+  '/dashboard/exports': ['super_admin', 'moc_admin', 'tdap_admin', 'tdap_officer', 'nafsa_admin', 'nafsa_officer', 'tic', 'exporter', 'auditor'],
+  '/dashboard/exports/new': ['exporter'],
+  '/dashboard/exporters': ALL_ROLES,
+  '/dashboard/complaints': ALL_ROLES,
+  '/dashboard/notifications': ALL_ROLES,
   '/admin': ['super_admin', 'moc_admin', 'tdap_admin', 'tdap_officer', 'nafsa_admin', 'nafsa_officer', 'auditor'],
   '/admin/reviews': ['super_admin', 'tdap_admin', 'tdap_officer', 'nafsa_admin', 'nafsa_officer'],
   '/admin/province-integrations': ['super_admin'],
