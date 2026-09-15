@@ -6,7 +6,6 @@ import RoleGuard from '@/components/auth/RoleGuard';
 import { useDataStore } from '@/lib/data-store';
 import { ROUTE_ROLES } from '@/lib/permissions';
 import { formatDateTime } from '@/lib/utils';
-import { PROVINCES } from '@/lib/mock-data';
 import {
   Database, Filter, Search, MapPin, FileText, Package,
   ChevronLeft, ChevronRight
@@ -33,6 +32,10 @@ export default function ProvinceDataListingPage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const recordTypes = [...new Set(provinceDataRecords.map(r => r.record_type))];
+  const provinces = useMemo(() => Array.from(new Set([
+    ...provinceApiSources.map(source => source.province),
+    ...provinceDataRecords.map(record => record.province),
+  ].filter(Boolean))).sort(), [provinceApiSources, provinceDataRecords]);
 
   const filteredRecords = useMemo(() => {
     return provinceDataRecords.filter(r => {
@@ -54,11 +57,11 @@ export default function ProvinceDataListingPage() {
   const pagedRecords = filteredRecords.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   // Province summary
-  const provinceSummary = PROVINCES.map(p => {
-    const records = provinceDataRecords.filter(r => r.province === p);
-    const sources = provinceApiSources.filter(s => s.province === p);
-    return { province: p, recordCount: records.length, sourceCount: sources.length };
-  }).filter(s => s.sourceCount > 0 || s.recordCount > 0);
+  const provinceSummary = provinces.map(province => {
+    const records = provinceDataRecords.filter(record => record.province === province);
+    const sources = provinceApiSources.filter(source => source.province === province);
+    return { province, recordCount: records.length, sourceCount: sources.length };
+  });
 
   return (
     <DashboardLayout>
@@ -130,7 +133,7 @@ export default function ProvinceDataListingPage() {
               className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-gov-green-500"
             >
               <option value="all">All Provinces</option>
-              {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
+              {provinces.map(province => <option key={province} value={province}>{province}</option>)}
             </select>
             <select
               value={sourceFilter}

@@ -7,17 +7,51 @@ import Image from 'next/image';
 import { Complaint } from '@/lib/types';
 import { useDataStore } from '@/lib/data-store';
 import { getStatusColor } from '@/lib/utils';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import { usePortalBackend } from '@/lib/supabase/use-mock';
 
 export default function TrackComplaintPage() {
   const [trackingNum, setTrackingNum] = useState('');
   const [result, setResult] = useState<Complaint | null>(null);
   const [searched, setSearched] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const { complaints } = useDataStore();
+  const backend = usePortalBackend();
 
-  const handleSearch = () => {
-    const found = complaints.find(c => c.tracking_number.toLowerCase() === trackingNum.toLowerCase());
-    setResult(found || null);
-    setSearched(true);
+  const handleSearch = async () => {
+    const trackingNumber = trackingNum.trim();
+    if (!trackingNumber) return;
+    setIsSearching(true);
+    try {
+      if (backend === 'mysql') {
+        const response = await fetch(`/api/mysql/complaints/track?tracking_number=${encodeURIComponent(trackingNumber)}`, {
+          cache: 'no-store',
+        });
+        const body = await response.json().catch(() => ({})) as { complaint?: Complaint | null; error?: string };
+        if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+        setResult(body.complaint ?? null);
+      } else {
+        const supabase = getSupabaseBrowserClient();
+        if (supabase) {
+          // SECURITY DEFINER RPC permits public tracking without exposing the
+          // complaints table to anonymous users.
+          const { data, error } = await supabase.rpc('get_complaint_by_tracking', {
+            p_tracking_number: trackingNumber,
+          });
+          if (error) throw error;
+          setResult(((data ?? [])[0] as Complaint | undefined) ?? null);
+        } else {
+          const found = complaints.find(c => c.tracking_number.toLowerCase() === trackingNumber.toLowerCase());
+          setResult(found || null);
+        }
+      }
+    } catch (error) {
+      console.error('[trackComplaint]', error);
+      setResult(null);
+    } finally {
+      setSearched(true);
+      setIsSearching(false);
+    }
   };
 
   return (
@@ -45,11 +79,11 @@ export default function TrackComplaintPage() {
               className="input-field flex-1"
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
             />
-            <button onClick={handleSearch} className="btn-primary flex items-center gap-2">
-              <Search className="w-4 h-4" /> Track
+            <button onClick={handleSearch} disabled={isSearching || !trackingNum.trim()} className="btn-primary flex items-center gap-2 disabled:opacity-50">
+              <Search className="w-4 h-4" /> {isSearching ? 'Searching...' : 'Track'}
             </button>
           </div>
-          <p className="text-xs text-gray-400 mt-2">Try: CMP-2025001 through CMP-2025020 for demo</p>
+          <p className="text-xs text-gray-400 mt-2">Use the tracking number issued when your complaint was submitted.</p>
         </div>
 
         {searched && !result && (

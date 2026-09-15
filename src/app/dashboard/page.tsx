@@ -1,32 +1,67 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import { isAdminSection } from '@/lib/auth';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useDataStore } from '@/lib/data-store';
-import { monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
-import { formatNumber, formatCurrency, getStatusColor } from '@/lib/utils';
-import { Package, FileCheck, AlertTriangle, Clock, CheckCircle, XCircle, TrendingUp, Globe, BarChart3, FileText, Search, Users } from 'lucide-react';
+import { getStatusColor } from '@/lib/utils';
+import { Package, FileCheck, AlertTriangle, Clock, CheckCircle, XCircle, TrendingUp, FileText, Users } from 'lucide-react';
 import Link from 'next/link';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const COLORS = ['#006B3F', '#D4AF37', '#0ea5e9', '#8b5cf6', '#ef4444', '#f97316', '#06b6d4', '#84cc16'];
+const FX_TO_USD: Record<string, number> = { USD: 1, PKR: 1 / 278, EUR: 1.08, GBP: 1.27, AED: 0.272294 };
+
+function relativeTime(value: string) {
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (elapsedSeconds < 60) return 'Just now';
+  if (elapsedSeconds < 3600) return `${Math.floor(elapsedSeconds / 60)}m ago`;
+  if (elapsedSeconds < 86400) return `${Math.floor(elapsedSeconds / 3600)}h ago`;
+  return `${Math.floor(elapsedSeconds / 86400)}d ago`;
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { exportRecords, complaints, companies } = useDataStore();
+  const { exportRecords, complaints, companies, notifications } = useDataStore();
 
   const role = user?.role ?? 'exporter';
   const userIsAdmin = isAdminSection(role) || role === 'tic';
   const isBuyer = role === 'buyer';
 
-  const myRecords = userIsAdmin
-    ? exportRecords  // Admins / TIC see all records
-    : exportRecords.filter(r => r.exporter_id === user?.id);  // Exporters see their own
-  const myComplaints = complaints.filter(c => c.status !== 'closed').slice(0, 5);
+  const myRecords = useMemo(
+    () => userIsAdmin ? exportRecords : exportRecords.filter(record => record.exporter_id === user?.id),
+    [exportRecords, user?.id, userIsAdmin],
+  );
 
   // Buyer-specific: verified exporters list
-  const verifiedExporters = companies.filter(c => c.status === 'approved');
+  const verifiedExporters = useMemo(
+    () => companies.filter(company => company.status === 'approved'),
+    [companies],
+  );
+  const monthlyExportData = useMemo(() => {
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
+      return { year: date.getFullYear(), monthIndex: date.getMonth(), month: date.toLocaleString('en-US', { month: 'short' }), submissions: 0, value: 0 };
+    });
+    for (const record of myRecords) {
+      const createdAt = new Date(record.created_at);
+      const bucket = months.find(item => item.year === createdAt.getFullYear() && item.monthIndex === createdAt.getMonth());
+      if (!bucket) continue;
+      bucket.submissions += 1;
+      bucket.value += record.estimated_value * (FX_TO_USD[record.currency?.toUpperCase()] ?? 1);
+    }
+    return months.map(({ year: _year, monthIndex: _monthIndex, ...entry }) => entry);
+  }, [myRecords]);
+  const exportsByProduct = useMemo(() => Array.from(
+    myRecords.reduce((counts, record) => {
+      const product = record.product.trim();
+      if (product) counts.set(product, (counts.get(product) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>()).entries(),
+    ([name, value]) => ({ name, value }),
+  ).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name)), [myRecords]);
 
   const stats = {
     total: myRecords.length,
@@ -245,16 +280,13 @@ export default function DashboardPage() {
             <h3 className="font-semibold text-gray-900">Pending Actions & Notifications</h3>
           </div>
           <div className="divide-y">
-            {[
-              { text: 'Export record EXP-2025003 approved by TDAP', time: '2 hours ago', type: 'success' },
-              { text: 'SPS Certificate for EXP-2025010 verified by NAFSA', time: '1 day ago', type: 'success' },
-              { text: 'Additional information requested for EXP-2025015', time: '2 days ago', type: 'warning' },
-              { text: 'Complaint CMP-2025005 status updated to Under Review', time: '3 days ago', type: 'info' },
-            ].map((n, i) => (
-              <div key={i} className="p-4 flex items-center gap-3 hover:bg-gray-50">
-                <div className={`w-2 h-2 rounded-full ${n.type === 'success' ? 'bg-green-500' : n.type === 'warning' ? 'bg-yellow-500' : 'bg-blue-500'}`} />
-                <p className="text-sm text-gray-700 flex-1">{n.text}</p>
-                <span className="text-xs text-gray-400">{n.time}</span>
+            {notifications.length === 0 ? (
+              <div className="p-6 text-center text-sm text-gray-400">No notifications yet.</div>
+            ) : notifications.slice(0, 5).map(notification => (
+              <div key={notification.id} className="p-4 flex items-center gap-3 hover:bg-gray-50">
+                <div className={`w-2 h-2 rounded-full ${notification.type === 'success' ? 'bg-green-500' : notification.type === 'warning' ? 'bg-yellow-500' : notification.type === 'error' ? 'bg-red-500' : 'bg-blue-500'}`} />
+                <p className="text-sm text-gray-700 flex-1"><span className="font-medium">{notification.title}</span>: {notification.message}</p>
+                <span className="text-xs text-gray-400 whitespace-nowrap">{relativeTime(notification.created_at)}</span>
               </div>
             ))}
           </div>

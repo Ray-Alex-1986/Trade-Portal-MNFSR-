@@ -145,6 +145,7 @@ export interface Complaint {
   public_response?: string;
   resolution_summary?: string;
   satisfaction_rating?: number;
+  resolved_at?: string;
   created_at: string;
   updated_at: string;
 }

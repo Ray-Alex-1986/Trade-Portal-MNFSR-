@@ -7,7 +7,6 @@ import { useDataStore } from '@/lib/data-store';
 import { ROUTE_ROLES } from '@/lib/permissions';
 import { ProvinceApiSource, CronInterval } from '@/lib/types';
 import { formatDateTime, getStatusColor } from '@/lib/utils';
-import { PROVINCES } from '@/lib/mock-data';
 import Link from 'next/link';
 import {
   Plug, Plus, RefreshCw, Pencil, Trash2, ChevronDown, ChevronUp,
@@ -39,19 +38,19 @@ const CRON_OPTIONS: { value: CronInterval; label: string }[] = [
 
 export default function ProvinceIntegrationsPage() {
   const {
-    provinceApiSources, provinceSyncLogs, provinceDataRecords,
+    provinceApiSources, provinceSyncLogs, provinceDataRecords, masterItems,
     addProvinceApiSource, updateProvinceApiSource, deleteProvinceApiSource, triggerProvinceSync,
   } = useDataStore();
+  const provinces = masterItems.provinces;
 
   const [showForm, setShowForm] = useState(false);
   const [editingSource, setEditingSource] = useState<ProvinceApiSource | null>(null);
   const [expandedSource, setExpandedSource] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [syncingId, setSyncingId] = useState<string | null>(null);
 
   // Form state
   const [formName, setFormName] = useState('');
-  const [formProvince, setFormProvince] = useState(PROVINCES[0]);
+  const [formProvince, setFormProvince] = useState('');
   const [formSystem, setFormSystem] = useState('');
   const [formUrl, setFormUrl] = useState('');
   const [formApiKey, setFormApiKey] = useState('');
@@ -61,7 +60,7 @@ export default function ProvinceIntegrationsPage() {
 
   const openAdd = () => {
     setEditingSource(null);
-    setFormName(''); setFormProvince(PROVINCES[0]); setFormSystem(''); setFormUrl('');
+    setFormName(''); setFormProvince(provinces[0] ?? ''); setFormSystem(''); setFormUrl('');
     setFormApiKey(''); setFormCron('daily'); setFormCronExpr(''); setFormActive(true);
     setShowForm(true);
   };
@@ -75,7 +74,7 @@ export default function ProvinceIntegrationsPage() {
   };
 
   const handleSave = () => {
-    if (!formName.trim() || !formUrl.trim()) return;
+    if (!formName.trim() || !formProvince || !formUrl.trim()) return;
     if (editingSource) {
       updateProvinceApiSource(editingSource.id, {
         name: formName, province: formProvince, system_name: formSystem,
@@ -95,11 +94,7 @@ export default function ProvinceIntegrationsPage() {
   };
 
   const handleSync = (sourceId: string) => {
-    setSyncingId(sourceId);
-    setTimeout(() => {
-      triggerProvinceSync(sourceId);
-      setSyncingId(null);
-    }, 1500);
+    triggerProvinceSync(sourceId);
   };
 
   const handleDelete = (id: string) => {
@@ -218,7 +213,7 @@ export default function ProvinceIntegrationsPage() {
                     syncLogs={provinceSyncLogs.filter(l => l.source_id === src.id)}
                     recordCount={provinceDataRecords.filter(r => r.source_id === src.id).length}
                     isExpanded={expandedSource === src.id}
-                    isSyncing={syncingId === src.id}
+                    isSyncing={src.last_sync_status === 'running'}
                     isDeleteConfirm={deleteConfirm === src.id}
                     onToggleExpand={() => setExpandedSource(expandedSource === src.id ? null : src.id)}
                     onEdit={() => openEdit(src)}
@@ -321,7 +316,8 @@ export default function ProvinceIntegrationsPage() {
                       value={formProvince} onChange={e => setFormProvince(e.target.value)}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-gov-green-500"
                     >
-                      {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
+                      <option value="">Select province</option>
+                      {provinces.map(province => <option key={province} value={province}>{province}</option>)}
                     </select>
                   </div>
                   <div>
@@ -385,7 +381,7 @@ export default function ProvinceIntegrationsPage() {
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={!formName.trim() || !formUrl.trim()}
+                  disabled={!formName.trim() || !formProvince || !formUrl.trim()}
                   className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {editingSource ? 'Update Source' : 'Add Source'}

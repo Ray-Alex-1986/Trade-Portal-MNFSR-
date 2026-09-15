@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
+import { useMemo } from 'react';
 import { FileText, Shield, AlertTriangle, TrendingUp, Globe, Users, Package, BarChart3, Phone, Mail, ChevronRight, ExternalLink } from 'lucide-react';
-import { publicStats, monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
+import { useDataStore } from '@/lib/data-store';
+import { summarizePublicPortalStats, usePublicPortalStats } from '@/lib/public-portal-stats';
 import { formatNumber } from '@/lib/utils';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
@@ -17,6 +19,13 @@ const notices = [
 ];
 
 export default function HomePage() {
+  const { users, companies, exportRecords, complaints } = useDataStore();
+  const fallbackStats = useMemo(
+    () => summarizePublicPortalStats(users, companies, exportRecords, complaints),
+    [users, companies, exportRecords, complaints],
+  );
+  const { stats: publicStats, isLoading: statsLoading } = usePublicPortalStats(fallbackStats);
+
   return (
     <div className="min-h-screen bg-white">
       {/* Top Banner */}
@@ -100,7 +109,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4">
           <div className="text-center mb-12">
             <h3 className="text-2xl font-bold text-gray-900 mb-2">Public Export Statistics</h3>
-            <p className="text-gray-500">Real-time overview of Pakistan's export registration system</p>
+            <p className="text-gray-500">Live aggregate data from Pakistan's export registration system{statsLoading ? ' is loading…' : ''}</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-12">
             {[
@@ -128,7 +137,7 @@ export default function HomePage() {
             <div className="card p-6">
               <h4 className="font-semibold text-gray-900 mb-4">Monthly Export Submissions</h4>
               <ResponsiveContainer width="100%" height={250}>
-                <AreaChart data={monthlyExportData}>
+                <AreaChart data={publicStats.monthly}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
@@ -140,7 +149,7 @@ export default function HomePage() {
             <div className="card p-6">
               <h4 className="font-semibold text-gray-900 mb-4">Export Value Trend (USD)</h4>
               <ResponsiveContainer width="100%" height={250}>
-                <LineChart data={monthlyExportData}>
+                <LineChart data={publicStats.monthly}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${(v/1000000).toFixed(1)}M`} />
@@ -152,7 +161,7 @@ export default function HomePage() {
             <div className="card p-6">
               <h4 className="font-semibold text-gray-900 mb-4">Top Exported Products</h4>
               <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={exportsByProduct} layout="vertical">
+                <BarChart data={publicStats.products} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" tick={{ fontSize: 11 }} />
                   <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 10 }} />
@@ -165,8 +174,8 @@ export default function HomePage() {
               <h4 className="font-semibold text-gray-900 mb-4">Exports by Destination Country</h4>
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
-                  <Pie data={exportsByCountry} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({ name, percent }: any) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`} labelLine={false}>
-                    {exportsByCountry.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  <Pie data={publicStats.countries} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({ name, percent }: any) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`} labelLine={false}>
+                    {publicStats.countries.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip />
                 </PieChart>

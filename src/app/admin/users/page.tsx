@@ -5,6 +5,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import RoleGuard from '@/components/auth/RoleGuard';
 import { useDataStore } from '@/lib/data-store';
 import { ROUTE_ROLES } from '@/lib/permissions';
+import { usePortalBackend } from '@/lib/supabase/use-mock';
 import { User, UserRole } from '@/lib/types';
 import { Search, Plus, Edit, Trash2, Shield, UserCheck, UserX, X, Save, CheckCircle, AlertTriangle } from 'lucide-react';
 
@@ -15,6 +16,7 @@ interface UserState {
 
 export default function UserManagementPage() {
   const { users, addUser, updateUser, deleteUser } = useDataStore();
+  const isMySqlBackend = usePortalBackend() === 'mysql';
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [editingUser, setEditingUser] = useState<UserState | null>(null);
@@ -22,7 +24,7 @@ export default function UserManagementPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
-  const [newUser, setNewUser] = useState({ full_name: '', email: '', role: 'exporter', institution: '' });
+  const [newUser, setNewUser] = useState({ full_name: '', email: '', role: 'exporter', institution: '', password: '' });
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
@@ -88,9 +90,17 @@ export default function UserManagementPage() {
       showToast('A user with this email already exists.', 'error');
       return;
     }
-    addUser({ full_name: newUser.full_name.trim(), email: newUser.email.trim(), role: newUser.role, institution: newUser.institution || undefined });
+    if (isMySqlBackend && newUser.password.length < 12) {
+      showToast('Set a temporary password with at least 12 characters.', 'error');
+      return;
+    }
+    addUser({
+      full_name: newUser.full_name.trim(), email: newUser.email.trim(), role: newUser.role,
+      institution: newUser.institution || undefined,
+      password: isMySqlBackend ? newUser.password : undefined,
+    });
     showToast(`User "${newUser.full_name}" added successfully`);
-    setNewUser({ full_name: '', email: '', role: 'exporter', institution: '' });
+    setNewUser({ full_name: '', email: '', role: 'exporter', institution: '', password: '' });
     setShowAdd(false);
   };
 
@@ -124,6 +134,13 @@ export default function UserManagementPage() {
               <div className="space-y-3">
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label><input value={newUser.full_name} onChange={e => setNewUser({ ...newUser, full_name: e.target.value })} className="input-field" placeholder="Enter full name" /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Email *</label><input type="email" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} className="input-field" placeholder="Enter email" /></div>
+                {isMySqlBackend && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Temporary Password *</label>
+                    <input type="password" minLength={12} autoComplete="new-password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} className="input-field" placeholder="At least 12 characters" />
+                    <p className="mt-1 text-xs text-gray-500">Share this password securely with the new user.</p>
+                  </div>
+                )}
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
                   <select value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })} className="input-field">
                     {Object.entries(roleLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -132,7 +149,7 @@ export default function UserManagementPage() {
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Institution</label><input value={newUser.institution} onChange={e => setNewUser({ ...newUser, institution: e.target.value })} className="input-field" placeholder="e.g., TDAP, NAFSA" /></div>
               </div>
               <div className="flex gap-3 mt-6">
-                <button onClick={handleAddUser} disabled={!newUser.full_name || !newUser.email} className="btn-primary flex-1 disabled:opacity-50">Add User</button>
+                <button onClick={handleAddUser} disabled={!newUser.full_name || !newUser.email || (isMySqlBackend && newUser.password.length < 12)} className="btn-primary flex-1 disabled:opacity-50">Add User</button>
                 <button onClick={() => setShowAdd(false)} className="btn-outline flex-1">Cancel</button>
               </div>
             </div>

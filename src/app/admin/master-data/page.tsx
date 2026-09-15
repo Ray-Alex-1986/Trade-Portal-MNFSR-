@@ -4,7 +4,6 @@ import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import RoleGuard from '@/components/auth/RoleGuard';
 import { ROUTE_ROLES } from '@/lib/permissions';
-import { HS_CODES } from '@/lib/mock-data';
 import { useDataStore, MasterCategory } from '@/lib/data-store';
 import { Plus, Edit, Trash2, Database, X, Save, CheckCircle, AlertTriangle } from 'lucide-react';
 
@@ -173,32 +172,6 @@ export default function MasterDataPage() {
               )}
             </div>
 
-            {/* HS Codes Reference */}
-            {category === 'products' && (
-              <div className="card mt-6">
-                <div className="p-4 border-b">
-                  <h3 className="font-semibold text-gray-900">HS Code Reference</h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="text-left p-3 font-medium text-gray-500">Product</th>
-                        <th className="text-left p-3 font-medium text-gray-500">HS Code</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(HS_CODES).map(([product, code]) => (
-                        <tr key={product} className="border-t">
-                          <td className="p-3">{product}</td>
-                          <td className="p-3 font-mono">{code}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>

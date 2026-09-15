@@ -4,7 +4,6 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { CheckCircle, Upload } from 'lucide-react';
 import Image from 'next/image';
-import { COUNTRIES, COMPLAINT_CATEGORIES } from '@/lib/mock-data';
 import { useDataStore } from '@/lib/data-store';
 import { generateId } from '@/lib/utils';
 
@@ -19,8 +18,8 @@ export default function SubmitComplaintPage() {
     category: '', subject: '', description: '', incident_date: '', preferred_contact: 'Email',
   });
   const [consent, setConsent] = useState(false);
-  const countries = masterItems.countries?.length ? masterItems.countries : COUNTRIES;
-  const categories = masterItems.complaint_categories?.length ? masterItems.complaint_categories : COMPLAINT_CATEGORIES;
+  const countries = masterItems.countries;
+  const categories = masterItems.complaint_categories;
 
   const handleSubmit = () => {
     if (!form.full_name.trim() || !form.email.trim() || !form.phone.trim() || !form.country || !form.category || !form.subject.trim() || !form.description.trim()) {

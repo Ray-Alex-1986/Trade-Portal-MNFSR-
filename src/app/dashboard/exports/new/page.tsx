@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useRouter } from 'next/navigation';
-import { HS_CODES } from '@/lib/mock-data';
 import { useDataStore } from '@/lib/data-store';
 import { ChevronRight, ChevronLeft, CheckCircle, Upload, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
@@ -33,11 +32,11 @@ export default function NewExportRecordPage() {
   const provinces = masterItems.provinces || [];
   const ports = masterItems.ports || [];
 
-  const myCompany = companies.find(c => c.owner_id === user?.id) || companies.find(c => c.owner_id === 'u8');
+  const myCompany = companies.find(company => company.owner_id === user?.id);
 
   const [item, setItem] = useState({
     product: '', category: '', hs_code: '', description: '', quantity: 0, unit: 'Metric Tons',
-    value: 0, currency: 'USD', origin: 'Pakistan', province: 'Punjab', district: '',
+    value: 0, currency: 'USD', origin: 'Pakistan', province: '', district: '',
     crop_year: 2026, batch: '', packaging: 'Carton Boxes', packages: 0, shipment_date: '',
   });
 
@@ -46,7 +45,7 @@ export default function NewExportRecordPage() {
   });
 
   const [shipment, setShipment] = useState({
-    dest_country: '', dest_port: '', departure_port: 'Karachi Port', transport_mode: 'Sea',
+    dest_country: '', dest_port: '', departure_port: '', transport_mode: 'Sea',
     shipping_company: '', container: '', bol_number: '', departure_date: '', arrival_date: '',
   });
 
@@ -103,10 +102,10 @@ export default function NewExportRecordPage() {
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900">Exporter Information (Auto-populated)</h2>
               <div className="grid md:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-500 mb-1">Registration Number</label><p className="input-field bg-gray-50">{myCompany?.registration_number || 'REG-2024008'}</p></div>
-                <div><label className="block text-sm font-medium text-gray-500 mb-1">Company Name</label><p className="input-field bg-gray-50">{myCompany?.legal_name || 'Pak Rice Exports (Pvt) Ltd'}</p></div>
-                <div><label className="block text-sm font-medium text-gray-500 mb-1">NTN</label><p className="input-field bg-gray-50">{myCompany?.ntn || '1234567-1'}</p></div>
-                <div><label className="block text-sm font-medium text-gray-500 mb-1">Authorized Representative</label><p className="input-field bg-gray-50">{user?.full_name || 'Hassan Ali Shah'}</p></div>
+                <div><label className="block text-sm font-medium text-gray-500 mb-1">Registration Number</label><p className="input-field bg-gray-50">{myCompany?.registration_number ?? '—'}</p></div>
+                <div><label className="block text-sm font-medium text-gray-500 mb-1">Company Name</label><p className="input-field bg-gray-50">{myCompany?.legal_name ?? '—'}</p></div>
+                <div><label className="block text-sm font-medium text-gray-500 mb-1">NTN</label><p className="input-field bg-gray-50">{myCompany?.ntn ?? '—'}</p></div>
+                <div><label className="block text-sm font-medium text-gray-500 mb-1">Authorized Representative</label><p className="input-field bg-gray-50">{user?.full_name ?? '—'}</p></div>
               </div>
             </div>
           )}
@@ -117,7 +116,7 @@ export default function NewExportRecordPage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Product *</label>
-                  <select value={item.product} onChange={e => setItem({ ...item, product: e.target.value, hs_code: HS_CODES[e.target.value] || '' })} className="input-field">
+                  <select value={item.product} onChange={e => setItem({ ...item, product: e.target.value })} className="input-field">
                     <option value="">Select Product</option>
                     {products.map(p => <option key={p}>{p}</option>)}
                   </select>
@@ -273,6 +272,10 @@ export default function NewExportRecordPage() {
                     setDocError(`Please upload the following mandatory documents: ${mandatoryDocsMissing.join(', ')}`);
                     return;
                   }
+                  if (!user || !myCompany) {
+                    setDocError('Your exporter profile and approved company must be available before an export record can be submitted.');
+                    return;
+                  }
                   if (!item.product || !item.description || !item.quantity || !item.value) {
                     setStep(1);
                     setDocError('Please complete the required item information (product, description, quantity, value) before submitting.');
@@ -294,8 +297,8 @@ export default function NewExportRecordPage() {
                     : (item.product.includes('Meat') || item.product.includes('Seafood')) ? 'Meat & Seafood'
                     : 'Other Agricultural';
                   const record = addExportRecord({
-                    exporter_id: user?.id || 'u8',
-                    company_id: myCompany?.id || 'c1',
+                    exporter_id: user.id,
+                    company_id: myCompany.id,
                     product: item.product,
                     product_category: productCategory,
                     hs_code: item.hs_code,
@@ -337,7 +340,7 @@ export default function NewExportRecordPage() {
                       file_name: `${docType.replace(/\s/g, '_')}.pdf`,
                       file_size: 1024,
                       upload_date: new Date().toISOString(),
-                      uploaded_by: user?.id || 'u8',
+                      uploaded_by: user.id,
                       version: 1,
                       verification_status: 'pending',
                       file_url: '#',

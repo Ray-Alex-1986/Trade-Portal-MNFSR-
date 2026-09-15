@@ -111,30 +111,9 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          {/* Demo Accounts */}
-          <div className="mt-6 pt-6 border-t">
-            <p className="text-xs font-medium text-gray-500 mb-3">DEMO ACCOUNTS (click to autofill):</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { email: 'superadmin@mnfsr.gov.pk', label: 'MNFSR Admin' },
-                { email: 'tdap.admin@tdap.gov.pk', label: 'TDAP Admin' },
-                { email: 'nafsa.admin@nafsa.gov.pk', label: 'NAFSA Admin' },
-                { email: 'exporter1@pakrice.com', label: 'Exporter' },
-                { email: 'buyer@chinagrain.cn', label: 'Buyer' },
-                { email: 'tic.china@tdap.gov.pk', label: 'TIC' },
-              ].map(acc => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => { setEmail(acc.email); setPassword('demo123'); }}
-                  className="text-xs p-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-left border"
-                >
-                  <span className="font-medium text-gray-700">{acc.label}</span>
-                  <span className="block text-gray-400 truncate">{acc.email}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <p className="mt-6 text-xs text-center text-gray-400">
+            Use the credentials issued for your Export Portal account.
+          </p>
         </div>
       </div>
     </div>

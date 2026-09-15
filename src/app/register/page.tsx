@@ -5,25 +5,30 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronRight, ChevronLeft, CheckCircle, AlertCircle, Upload, X, FileText } from 'lucide-react';
 import Image from 'next/image';
-import { PROVINCES, DISTRICTS, PRODUCTS, mockVerificationAPI } from '@/lib/mock-data';
 import { generateId } from '@/lib/utils';
 import { useDataStore } from '@/lib/data-store';
+import { registerExporter } from '@/lib/registration';
+import { useMockData } from '@/lib/supabase/use-mock';
 
 const steps = ['Company Information', 'Authorized Representative', 'Verification'];
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { submitRegistration } = useDataStore();
+  const { submitRegistration, masterItems } = useDataStore();
+  const isMockMode = useMockData();
+  const provinces = masterItems.provinces;
+  const products = masterItems.products;
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verificationResults, setVerificationResults] = useState<Record<string, { status: string; message: string }>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [regNumber] = useState(generateId('REG'));
 
   const [company, setCompany] = useState({
     legal_name: '', trading_name: '', company_type: 'Private Limited', ntn: '', secp_number: '',
-    registration_date: '', address: '', province: 'Punjab', district: '', city: '',
+    registration_date: '', address: '', province: '', district: '', city: '',
     website: '', email: '', phone: '', nature_of_business: 'Agricultural Export', main_export_categories: [] as string[],
   });
 
@@ -74,32 +79,38 @@ export default function RegisterPage() {
     }
   };
 
-  const runVerification = async () => {
+  const runVerification = () => {
     setVerifying(true);
-    try {
-      const nadra = await mockVerificationAPI.verifyNADRA(representative.cnic);
-      setVerificationResults(prev => ({ ...prev, nadra }));
-      const secp = await mockVerificationAPI.verifySECP(company.secp_number);
-      setVerificationResults(prev => ({ ...prev, secp }));
-      const ntn = await mockVerificationAPI.verifyNTN(company.ntn);
-      setVerificationResults(prev => ({ ...prev, ntn }));
-    } finally {
-      setVerifying(false);
-    }
+    setVerificationResults({
+      nadra: { status: 'pending', message: 'NADRA verification will be performed by an authorized reviewer after submission.' },
+      secp: { status: 'pending', message: 'SECP verification will be performed by an authorized reviewer after submission.' },
+      ntn: { status: 'pending', message: 'NTN/FBR verification will be performed by an authorized reviewer after submission.' },
+    });
+    setVerifying(false);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!consent) return;
+    if (representative.password !== representative.confirm_password) {
+      setSubmitError('Passwords do not match.');
+      return;
+    }
+    setSubmitError('');
     setLoading(true);
     try {
-      submitRegistration({
-        company,
-        representative,
-        registration_number: regNumber,
-      });
+      const input = { company, representative, registration_number: regNumber };
+      if (isMockMode) {
+        submitRegistration(input);
+      } else {
+        const result = await registerExporter(input);
+        if (result.error) {
+          setSubmitError(result.error);
+          return;
+        }
+      }
       setSubmitted(true);
     } catch {
-      // ignore — demo mode
+      setSubmitError('Registration could not be submitted. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -122,7 +133,7 @@ export default function RegisterPage() {
           </div>
           <div className="card p-4 mb-6 bg-blue-50 border-blue-200">
             <p className="text-sm font-medium text-blue-800 mb-1">Your account has been created!</p>
-            <p className="text-sm text-blue-600">Login with: <span className="font-mono font-bold">{representative.email}</span> (any password)</p>
+            <p className="text-sm text-blue-600">Login with your email address and the password you chose during registration.</p>
           </div>
           <div className="flex gap-3 justify-center">
             <button className="btn-outline" onClick={() => window.print()}>Download Acknowledgment</button>
@@ -204,15 +215,13 @@ export default function RegisterPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Province *</label>
                   <select value={company.province} onChange={e => setCompany({ ...company, province: e.target.value, district: '' })} className="input-field">
-                    {PROVINCES.map(p => <option key={p}>{p}</option>)}
+                    <option value="">Select Province</option>
+                    {provinces.map(province => <option key={province}>{province}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">District *</label>
-                  <select value={company.district} onChange={e => setCompany({ ...company, district: e.target.value })} className="input-field">
-                    <option value="">Select District</option>
-                    {(DISTRICTS[company.province] || []).map(d => <option key={d}>{d}</option>)}
-                  </select>
+                  <input value={company.district} onChange={e => setCompany({ ...company, district: e.target.value })} className="input-field" placeholder="Enter district" />
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Registered Business Address *</label>
@@ -243,7 +252,7 @@ export default function RegisterPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Main Export Categories *</label>
                   <select multiple value={company.main_export_categories} onChange={e => setCompany({ ...company, main_export_categories: Array.from(e.target.selectedOptions, o => o.value) })} className="input-field h-24">
-                    {PRODUCTS.map(p => <option key={p}>{p}</option>)}
+                    {products.map(product => <option key={product}>{product}</option>)}
                   </select>
                 </div>
                 <div>
@@ -397,11 +406,11 @@ export default function RegisterPage() {
               <h2 className="text-xl font-bold text-gray-900">Step 3: Verification</h2>
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
                 <AlertCircle className="w-4 h-4 inline mr-1" />
-                <strong>MVP Verification Simulation:</strong> The following verifications are simulated for demonstration purposes.
+                <strong>Official verification:</strong> NADRA, SECP, and NTN/FBR checks are recorded as pending and are completed by authorized reviewers after submission.
               </div>
 
               <button onClick={runVerification} disabled={verifying} className="btn-primary w-full py-3 disabled:opacity-50">
-                {verifying ? 'Running Verifications...' : 'Run Verification Checks'}
+                {verifying ? 'Preparing Verification Request...' : 'Mark Details Ready for Official Verification'}
               </button>
 
               <div className="space-y-3">
@@ -416,8 +425,8 @@ export default function RegisterPage() {
                       <p className="text-sm text-gray-500">{v.desc}</p>
                     </div>
                     {verificationResults[v.key] ? (
-                      <span className={`badge ${verificationResults[v.key].status === 'verified' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                        {verificationResults[v.key].status === 'verified' ? 'Verified' : 'Failed'}
+                      <span className={`badge ${verificationResults[v.key].status === 'verified' ? 'bg-green-100 text-green-800' : verificationResults[v.key].status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                        {verificationResults[v.key].status === 'verified' ? 'Verified' : verificationResults[v.key].status === 'failed' ? 'Failed' : 'Pending Official Review'}
                       </span>
                     ) : (
                       <span className="badge bg-gray-100 text-gray-500">Not Initiated</span>
@@ -426,17 +435,17 @@ export default function RegisterPage() {
                 ))}
                 <div className="flex items-center justify-between p-4 border rounded-lg">
                   <div>
-                    <p className="font-medium text-gray-900">Mobile OTP Verification</p>
+                    <p className="font-medium text-gray-900">Mobile Contact</p>
                     <p className="text-sm text-gray-500">{representative.mobile || 'Not provided'}</p>
                   </div>
-                  <span className="badge bg-green-100 text-green-800">Simulated: Passed</span>
+                  <span className="badge bg-yellow-100 text-yellow-800">Pending reviewer contact</span>
                 </div>
                 <div className="flex items-center justify-between p-4 border rounded-lg">
                   <div>
-                    <p className="font-medium text-gray-900">Email Verification</p>
+                    <p className="font-medium text-gray-900">Email Confirmation</p>
                     <p className="text-sm text-gray-500">{representative.email || 'Not provided'}</p>
                   </div>
-                  <span className="badge bg-green-100 text-green-800">Simulated: Passed</span>
+                  <span className="badge bg-yellow-100 text-yellow-800">Completed through Supabase Auth</span>
                 </div>
               </div>
 
@@ -446,6 +455,13 @@ export default function RegisterPage() {
                   I hereby declare that all information provided is true and accurate. I consent to the verification of my details with relevant government authorities (NADRA, SECP, FBR). I understand that providing false information may result in rejection of my application and legal action.
                 </span>
               </label>
+            </div>
+          )}
+
+          {submitError && (
+            <div className="mt-6 flex items-center gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+              <AlertCircle className="w-4 h-4" />
+              {submitError}
             </div>
           )}
 

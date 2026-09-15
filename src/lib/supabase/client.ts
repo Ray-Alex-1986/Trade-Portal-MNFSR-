@@ -1,7 +1,7 @@
 'use client';
 
 import { createBrowserClient } from '@supabase/ssr';
-import { useMockData } from './use-mock';
+import { getConfiguredPortalBackend, useMockData } from './use-mock';
 
 function createSupabaseBrowserClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,10 +10,10 @@ function createSupabaseBrowserClient() {
   return createBrowserClient(url, key);
 }
 
-let clientInstance: ReturnType<typeof createSupabaseBrowserClient> | null = null;
+let clientInstance: ReturnType<typeof createSupabaseBrowserClient> | undefined;
 
 export function getSupabaseBrowserClient() {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined' || getConfiguredPortalBackend() !== 'supabase') return null;
   if (clientInstance === undefined) {
     clientInstance = createSupabaseBrowserClient();
   }
