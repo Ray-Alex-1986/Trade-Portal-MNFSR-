@@ -9,7 +9,7 @@ import {
 } from './mock-data';
 import { useAuth } from './auth';
 
-const STORAGE_KEY = 'export_portal_data_v1';
+const STORAGE_KEY = 'export_portal_data_v2';
 
 export type MasterCategory =
   | 'products' | 'countries' | 'provinces' | 'ports'
@@ -107,6 +107,7 @@ interface DataStoreContextType {
   updateUser: (id: string, patch: Partial<User>) => void;
   deleteUser: (id: string) => void;
   // Registrations
+  submitRegistration: (input: { company: Partial<Company>; representative: { full_name: string; email: string; username: string; password?: string; cnic: string; designation: string; mobile: string }; registration_number: string }) => { user: User; company: Company };
   reviewRegistration: (id: string, decision: ReviewDecision, remarks?: string) => void;
   // Export records
   addExportRecord: (input: Partial<ExportRecord>) => ExportRecord;
@@ -148,6 +149,7 @@ const DataStoreContext = createContext<DataStoreContextType>({
   provinceApiSources: [], provinceSyncLogs: [], provinceDataRecords: [],
   addUser: () => { throw new Error('DataProvider missing'); },
   updateUser: () => {}, deleteUser: () => {},
+  submitRegistration: () => { throw new Error('DataProvider missing'); },
   reviewRegistration: () => {},
   addExportRecord: () => { throw new Error('DataProvider missing'); },
   updateExportRecord: () => {}, deleteExportRecord: () => {}, reviewExportRecord: () => {},
@@ -294,6 +296,60 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [mutate]);
 
   // ---------- Registrations (companies) ----------
+  const submitRegistration = useCallback((input: {
+    company: Partial<Company>;
+    representative: { full_name: string; email: string; username: string; password?: string; cnic: string; designation: string; mobile: string };
+    registration_number: string;
+  }): { user: User; company: Company } => {
+    const newUser: User = {
+      id: uid('u'),
+      email: input.representative.email,
+      full_name: input.representative.full_name,
+      role: 'exporter',
+      is_active: true,
+      created_at: nowISO(),
+      last_login: undefined,
+    };
+    const newCompany: Company = {
+      id: uid('c'),
+      legal_name: input.company.legal_name || '',
+      trading_name: input.company.trading_name || undefined,
+      company_type: input.company.company_type || 'Private Limited',
+      ntn: input.company.ntn || '',
+      secp_number: input.company.secp_number || '',
+      registration_date: input.company.registration_date || nowISO(),
+      address: input.company.address || '',
+      province: input.company.province || 'Punjab',
+      district: input.company.district || '',
+      city: input.company.city || '',
+      website: input.company.website || undefined,
+      email: input.company.email || input.representative.email,
+      phone: input.company.phone || input.representative.mobile,
+      nature_of_business: input.company.nature_of_business || 'Agricultural Export',
+      main_export_categories: input.company.main_export_categories || [],
+      registration_number: input.registration_number,
+      status: 'submitted',
+      nadra_status: 'pending',
+      secp_status: 'pending',
+      ntn_status: 'pending',
+      created_at: nowISO(),
+      updated_at: nowISO(),
+      owner_id: newUser.id,
+    };
+    mutate(
+      { action: 'Submit Registration', module: 'Registration', record_id: input.registration_number, new_value: `${input.company.legal_name} — ${input.representative.full_name}` },
+      prev => ({
+        users: [...prev.users, newUser],
+        companies: [...prev.companies, newCompany],
+        notifications: [
+          notify('system', 'New Registration Submitted', `${input.company.legal_name} (${input.registration_number}) has submitted a registration request.`, 'info', '/admin/registrations'),
+          ...prev.notifications,
+        ],
+      }),
+    );
+    return { user: newUser, company: newCompany };
+  }, [mutate]);
+
   const reviewRegistration = useCallback((id: string, decision: ReviewDecision, remarks?: string) => {
     mutate(null, prev => {
       const company = prev.companies.find(c => c.id === id);
@@ -842,7 +898,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     provinceSyncLogs: data.provinceSyncLogs,
     provinceDataRecords: data.provinceDataRecords,
     addUser, updateUser, deleteUser,
-    reviewRegistration,
+    submitRegistration, reviewRegistration,
     addExportRecord, updateExportRecord, deleteExportRecord, reviewExportRecord,
     addComplaint, updateComplaint, resolveComplaint, escalateComplaint, addComplaintNote,
     addMasterItem, updateMasterItem, deleteMasterItem,

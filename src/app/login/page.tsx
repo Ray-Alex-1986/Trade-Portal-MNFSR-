@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useAuth, isAdmin } from '@/lib/auth';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import Image from 'next/image';
-import { mockUsers } from '@/lib/mock-data';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -25,9 +24,8 @@ export default function LoginPage() {
       const result = await login(email, password);
       if (result.error) {
         setError(result.error);
-      } else {
-        const user = mockUsers.find(u => u.email === email);
-        if (user && isAdmin(user.role)) {
+      } else if (result.user) {
+        if (isAdmin(result.user.role)) {
           router.push('/admin');
         } else {
           router.push('/dashboard');

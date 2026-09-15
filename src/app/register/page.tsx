@@ -7,11 +7,13 @@ import { ChevronRight, ChevronLeft, CheckCircle, AlertCircle, Upload, X, FileTex
 import Image from 'next/image';
 import { PROVINCES, DISTRICTS, PRODUCTS, mockVerificationAPI } from '@/lib/mock-data';
 import { generateId } from '@/lib/utils';
+import { useDataStore } from '@/lib/data-store';
 
 const steps = ['Company Information', 'Authorized Representative', 'Verification'];
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { submitRegistration } = useDataStore();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -89,7 +91,18 @@ export default function RegisterPage() {
   const handleSubmit = () => {
     if (!consent) return;
     setLoading(true);
-    setTimeout(() => { setSubmitted(true); setLoading(false); }, 1500);
+    try {
+      submitRegistration({
+        company,
+        representative,
+        registration_number: regNumber,
+      });
+      setSubmitted(true);
+    } catch {
+      // ignore — demo mode
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (submitted) {
@@ -106,6 +119,10 @@ export default function RegisterPage() {
             <div className="flex justify-between"><span className="text-gray-500">Company:</span><span className="font-medium">{company.legal_name}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Status:</span><span className="badge bg-yellow-100 text-yellow-800">Pending Verification</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Submitted:</span><span>{new Date().toLocaleString()}</span></div>
+          </div>
+          <div className="card p-4 mb-6 bg-blue-50 border-blue-200">
+            <p className="text-sm font-medium text-blue-800 mb-1">Your account has been created!</p>
+            <p className="text-sm text-blue-600">Login with: <span className="font-mono font-bold">{representative.email}</span> (any password)</p>
           </div>
           <div className="flex gap-3 justify-center">
             <button className="btn-outline" onClick={() => window.print()}>Download Acknowledgment</button>

@@ -7,7 +7,7 @@ import { mockUsers } from './mock-data';
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ error?: string }>;
+  login: (email: string, password: string) => Promise<{ error?: string; user?: User }>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
 }
@@ -32,14 +32,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const login = useCallback(async (email: string, _password: string): Promise<{ error?: string }> => {
+  const login = useCallback(async (email: string, _password: string): Promise<{ error?: string; user?: User }> => {
     setIsLoading(true);
     try {
       // Mock mode: find user by email (seed users, then users persisted in the data store)
       let found = mockUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
       if (!found && typeof window !== 'undefined') {
         try {
-          const raw = localStorage.getItem('export_portal_data_v1');
+          const raw = localStorage.getItem('export_portal_data_v2');
           if (raw) {
             const data = JSON.parse(raw);
             const stored = (data?.users || []).find((u: User) => u.email.toLowerCase() === email.toLowerCase());
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userWithLogin = { ...found, last_login: new Date().toISOString() };
         setUser(userWithLogin);
         localStorage.setItem('export_portal_user', JSON.stringify(userWithLogin));
-        return {};
+        return { user: userWithLogin };
       }
       return { error: 'Invalid credentials. Try one of the demo accounts.' };
     } finally {
