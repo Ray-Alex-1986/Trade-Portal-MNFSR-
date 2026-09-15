@@ -5,14 +5,15 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useDataStore } from '@/lib/data-store';
 import { monthlyExportData, exportsByProduct, exportsByCountry } from '@/lib/mock-data';
 import { formatNumber, getStatusColor } from '@/lib/utils';
-import { Users, Package, FileCheck, AlertTriangle, TrendingUp, Globe, Clock, CheckCircle, XCircle, BarChart3, Shield, RotateCcw } from 'lucide-react';
+import { Users, Package, FileCheck, AlertTriangle, TrendingUp, Globe, Clock, CheckCircle, XCircle, BarChart3, Shield, RotateCcw, Plug, RefreshCw, Activity } from 'lucide-react';
+import Link from 'next/link';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const COLORS = ['#006B3F', '#D4AF37', '#0ea5e9', '#8b5cf6', '#ef4444', '#f97316', '#06b6d4', '#84cc16', '#ec4899', '#14b8a6'];
 
 export default function AdminDashboardPage() {
   const [period, setPeriod] = useState('12m');
-  const { companies, exportRecords, complaints, users, resetData } = useDataStore();
+  const { companies, exportRecords, complaints, users, resetData, provinceApiSources, provinceDataRecords, provinceSyncLogs } = useDataStore();
 
   const pendingRegistrations = companies.filter(c => ['submitted', 'under_tdap_review', 'under_nafsa_review'].includes(c.status));
   const pendingExports = exportRecords.filter(r => ['submitted', 'under_tdap_review', 'under_nafsa_review'].includes(r.status));
@@ -210,6 +211,60 @@ export default function AdminDashboardPage() {
                 <Line type="monotone" dataKey="resolved" stroke="#22c55e" strokeWidth={2} name="Resolved" />
               </LineChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Province API Integration Summary */}
+        <div className="card">
+          <div className="p-4 border-b flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <Plug className="w-4 h-4 text-gov-green-600" />
+              Province API Integrations
+            </h3>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-500">
+                {provinceApiSources.filter(s => s.is_active).length}/{provinceApiSources.length} active &middot; {provinceDataRecords.length.toLocaleString()} records
+              </span>
+              <Link href="/admin/province-integrations" className="text-sm text-gov-green-600 hover:underline">Manage Integrations</Link>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 p-4">
+            {provinceApiSources.map(src => {
+              const records = provinceDataRecords.filter(r => r.source_id === src.id).length;
+              const lastLog = provinceSyncLogs.find(l => l.source_id === src.id);
+              return (
+                <div key={src.id} className="rounded-lg border p-3 hover:shadow-sm transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`w-2 h-2 rounded-full ${src.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
+                    {src.last_sync_status && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        src.last_sync_status === 'success' ? 'bg-green-50 text-green-700' :
+                        src.last_sync_status === 'failed' ? 'bg-red-50 text-red-700' :
+                        'bg-yellow-50 text-yellow-700'
+                      }`}>
+                        {src.last_sync_status}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 truncate">{src.province}</p>
+                  <p className="text-xs text-gray-500 truncate mb-2">{src.name}</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-lg font-bold text-gray-900">{records}</span>
+                    <span className="text-xs text-gray-400">records</span>
+                  </div>
+                  {lastLog && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Last: {new Date(lastLog.started_at).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+            {provinceApiSources.length === 0 && (
+              <div className="col-span-full text-center py-4 text-gray-400 text-sm">
+                No integrations configured. <Link href="/admin/province-integrations" className="text-gov-green-600 hover:underline">Set up your first API source</Link>
+              </div>
+            )}
           </div>
         </div>
 

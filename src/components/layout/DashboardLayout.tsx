@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, FileText, Package, AlertTriangle, Users, Settings,
   ClipboardList, BarChart3, Bell, Shield, BookOpen, LogOut, Menu, X,
-  ChevronDown, FileCheck, Search, Moon, Sun, Database
+  ChevronDown, FileCheck, Search, Moon, Sun, Database, Plug
 } from 'lucide-react';
 
 const exporterNav = [
@@ -22,6 +22,7 @@ const exporterNav = [
 const adminNav = [
   { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
   { href: '/admin/reviews', label: 'Review Workspace', icon: ClipboardList },
+  { href: '/admin/province-integrations', label: 'Province Integrations', icon: Plug },
   { href: '/admin/users', label: 'User Management', icon: Users },
   { href: '/admin/reports', label: 'Reports Center', icon: BarChart3 },
   { href: '/admin/master-data', label: 'Master Data', icon: Database },

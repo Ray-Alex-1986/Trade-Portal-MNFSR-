@@ -1,4 +1,4 @@
-import { User, Company, ExportRecord, Complaint, Notification, AuditLog, DashboardStats } from './types';
+import { User, Company, ExportRecord, Complaint, Notification, AuditLog, DashboardStats, ProvinceApiSource, ProvinceSyncLog, ProvinceDataRecord } from './types';
 
 export const PRODUCTS = ['Basmati Rice', 'Mango (Chaunsa)', 'Mango (Sindhri)', 'Kinnow', 'Dates (Aseel)', 'Sesame Seeds', 'Maize', 'Potatoes', 'Onions', 'Beef Meat', 'Seafood (Shrimp)', 'Olive Oil', 'Citrus Fruits', 'Red Chili', 'Cotton'];
 export const COUNTRIES = ['China', 'United Arab Emirates', 'Saudi Arabia', 'United Kingdom', 'Malaysia', 'Indonesia', 'Qatar', 'Oman', 'Germany', 'Kazakhstan', 'Afghanistan', 'Turkey', 'South Africa', 'United States', 'Japan'];
@@ -248,3 +248,127 @@ export const mockVerificationAPI = {
     return { status: 'verified' as const, message: 'MVP Verification Simulation: NTN/FBR verification completed successfully.', reference: `FBR-${Date.now()}` };
   },
 };
+
+// ---------- Province API Integration Mock Data ----------
+
+export const mockProvinceApiSources: ProvinceApiSource[] = [
+  {
+    id: 'pas-1',
+    name: 'Punjab Agriculture Export Portal',
+    province: 'Punjab',
+    system_name: 'Punjab Agri-Export System',
+    api_url: 'https://api.punjab-agri.gov.pk/v1/exports',
+    cron_interval: 'hourly',
+    is_active: true,
+    last_sync_at: '2026-09-15T08:30:00Z',
+    last_sync_status: 'success',
+    last_sync_records: 24,
+    total_records_pulled: 1842,
+    created_at: '2026-03-01T10:00:00Z',
+    updated_at: '2026-09-15T08:30:00Z',
+    created_by: 'u1',
+  },
+  {
+    id: 'pas-2',
+    name: 'Sindh Trade & Commerce Bureau',
+    province: 'Sindh',
+    system_name: 'Sindh Trade Portal',
+    api_url: 'https://api.sindh-commerce.gov.pk/v2/trade-data',
+    cron_interval: 'daily',
+    is_active: true,
+    last_sync_at: '2026-09-15T02:00:00Z',
+    last_sync_status: 'success',
+    last_sync_records: 18,
+    total_records_pulled: 967,
+    created_at: '2026-04-10T14:00:00Z',
+    updated_at: '2026-09-15T02:00:00Z',
+    created_by: 'u1',
+  },
+  {
+    id: 'pas-3',
+    name: 'KP Export Facilitation Center',
+    province: 'Khyber Pakhtunkhwa',
+    system_name: 'KP Trade Gateway',
+    api_url: 'https://api.kp-trade.gov.pk/v1/export-records',
+    cron_interval: 'every_6h',
+    is_active: true,
+    last_sync_at: '2026-09-15T06:00:00Z',
+    last_sync_status: 'partial',
+    last_sync_records: 7,
+    last_sync_error: 'Timeout on batch 3 of 4 — 7 of 12 records synced',
+    total_records_pulled: 534,
+    created_at: '2026-05-20T09:00:00Z',
+    updated_at: '2026-09-15T06:00:00Z',
+    created_by: 'u3',
+  },
+  {
+    id: 'pas-4',
+    name: 'Balochistan Mineral & Agri Export Board',
+    province: 'Balochistan',
+    system_name: 'Balochistan Export Board',
+    api_url: 'https://api.balochistan-export.gov.pk/v1/data',
+    cron_interval: 'daily',
+    is_active: false,
+    last_sync_at: '2026-09-12T02:00:00Z',
+    last_sync_status: 'failed',
+    last_sync_records: 0,
+    last_sync_error: 'Connection refused — endpoint unreachable',
+    total_records_pulled: 215,
+    created_at: '2026-06-15T11:00:00Z',
+    updated_at: '2026-09-12T02:00:00Z',
+    created_by: 'u1',
+  },
+  {
+    id: 'pas-5',
+    name: 'Gilgit-Baltistan Horticulture Board',
+    province: 'Gilgit-Baltistan',
+    system_name: 'GB Horticulture System',
+    api_url: 'https://api.gb-horti.gov.pk/v1/produce',
+    cron_interval: 'weekly',
+    is_active: true,
+    last_sync_at: '2026-09-14T00:00:00Z',
+    last_sync_status: 'success',
+    last_sync_records: 5,
+    total_records_pulled: 128,
+    created_at: '2026-07-01T08:00:00Z',
+    updated_at: '2026-09-14T00:00:00Z',
+    created_by: 'u3',
+  },
+];
+
+export const mockProvinceSyncLogs: ProvinceSyncLog[] = [
+  { id: 'psl-1', source_id: 'pas-1', source_name: 'Punjab Agriculture Export Portal', province: 'Punjab', status: 'success', records_pulled: 24, started_at: '2026-09-15T08:30:00Z', completed_at: '2026-09-15T08:30:12Z', duration_ms: 12043, triggered_by: 'cron' },
+  { id: 'psl-2', source_id: 'pas-1', source_name: 'Punjab Agriculture Export Portal', province: 'Punjab', status: 'success', records_pulled: 19, started_at: '2026-09-15T07:30:00Z', completed_at: '2026-09-15T07:30:09Z', duration_ms: 9210, triggered_by: 'cron' },
+  { id: 'psl-3', source_id: 'pas-2', source_name: 'Sindh Trade & Commerce Bureau', province: 'Sindh', status: 'success', records_pulled: 18, started_at: '2026-09-15T02:00:00Z', completed_at: '2026-09-15T02:00:45Z', duration_ms: 45320, triggered_by: 'cron' },
+  { id: 'psl-4', source_id: 'pas-3', source_name: 'KP Export Facilitation Center', province: 'Khyber Pakhtunkhwa', status: 'partial', records_pulled: 7, started_at: '2026-09-15T06:00:00Z', completed_at: '2026-09-15T06:01:02Z', duration_ms: 62000, error_message: 'Timeout on batch 3 of 4', triggered_by: 'cron' },
+  { id: 'psl-5', source_id: 'pas-4', source_name: 'Balochistan Mineral & Agri Export Board', province: 'Balochistan', status: 'failed', records_pulled: 0, started_at: '2026-09-12T02:00:00Z', completed_at: '2026-09-12T02:00:30Z', duration_ms: 30000, error_message: 'Connection refused — endpoint unreachable', triggered_by: 'cron' },
+  { id: 'psl-6', source_id: 'pas-5', source_name: 'Gilgit-Baltistan Horticulture Board', province: 'Gilgit-Baltistan', status: 'success', records_pulled: 5, started_at: '2026-09-14T00:00:00Z', completed_at: '2026-09-14T00:00:08Z', duration_ms: 8100, triggered_by: 'cron' },
+  { id: 'psl-7', source_id: 'pas-1', source_name: 'Punjab Agriculture Export Portal', province: 'Punjab', status: 'success', records_pulled: 31, started_at: '2026-09-14T08:30:00Z', completed_at: '2026-09-14T08:30:14Z', duration_ms: 14200, triggered_by: 'manual' },
+  { id: 'psl-8', source_id: 'pas-2', source_name: 'Sindh Trade & Commerce Bureau', province: 'Sindh', status: 'success', records_pulled: 22, started_at: '2026-09-14T02:00:00Z', completed_at: '2026-09-14T02:00:38Z', duration_ms: 38400, triggered_by: 'cron' },
+];
+
+const recordTypes = ['export_permit', 'phyto_certificate', 'quality_inspection', 'trade_license', 'origin_certificate'];
+
+export const mockProvinceDataRecords: ProvinceDataRecord[] = Array.from({ length: 40 }, (_, i) => {
+  const source = mockProvinceApiSources[i % mockProvinceApiSources.length];
+  const recordType = recordTypes[i % recordTypes.length];
+  return {
+    id: `pdr-${i + 1}`,
+    source_id: source.id,
+    source_name: source.name,
+    province: source.province,
+    record_type: recordType,
+    data: {
+      reference_number: `REF-${source.province.substring(0, 2).toUpperCase()}-${2026000 + i}`,
+      product: PRODUCTS[i % PRODUCTS.length],
+      quantity: randomNum(10, 500),
+      unit: 'Metric Tons',
+      exporter_name: companyNames[i % companyNames.length],
+      destination: COUNTRIES[i % COUNTRIES.length],
+      status: randomItem(['approved', 'pending', 'verified', 'in_transit']),
+      issue_date: randomDate(new Date('2026-01-01'), new Date('2026-09-15')),
+    },
+    external_id: `EXT-${Date.now().toString(36)}-${i}`,
+    synced_at: randomDate(new Date('2026-09-01'), new Date('2026-09-15')),
+  };
+});

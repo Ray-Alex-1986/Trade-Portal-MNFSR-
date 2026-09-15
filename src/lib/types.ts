@@ -178,3 +178,54 @@ export interface DashboardStats {
   complaintsReceived: number;
   complaintsResolved: number;
 }
+
+// ---------- Province API Integration ----------
+
+export type CronInterval = 'every_5m' | 'every_15m' | 'every_30m' | 'hourly' | 'every_6h' | 'daily' | 'weekly' | 'custom';
+
+export type SyncStatus = 'idle' | 'running' | 'success' | 'failed' | 'partial';
+
+export interface ProvinceApiSource {
+  id: string;
+  name: string;
+  province: string;
+  system_name: string;
+  api_url: string;
+  api_key?: string;
+  cron_interval: CronInterval;
+  cron_expression?: string;
+  is_active: boolean;
+  last_sync_at?: string;
+  last_sync_status?: SyncStatus;
+  last_sync_records?: number;
+  last_sync_error?: string;
+  total_records_pulled: number;
+  created_at: string;
+  updated_at: string;
+  created_by: string;
+}
+
+export interface ProvinceSyncLog {
+  id: string;
+  source_id: string;
+  source_name: string;
+  province: string;
+  status: SyncStatus;
+  records_pulled: number;
+  started_at: string;
+  completed_at?: string;
+  duration_ms?: number;
+  error_message?: string;
+  triggered_by: string;
+}
+
+export interface ProvinceDataRecord {
+  id: string;
+  source_id: string;
+  source_name: string;
+  province: string;
+  record_type: string;
+  data: Record<string, unknown>;
+  external_id?: string;
+  synced_at: string;
+}

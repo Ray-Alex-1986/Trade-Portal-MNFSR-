@@ -1,10 +1,11 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { User, Company, ExportRecord, Complaint, AuditLog, Notification, UserRole } from './types';
+import { User, Company, ExportRecord, Complaint, AuditLog, Notification, UserRole, ProvinceApiSource, ProvinceSyncLog, ProvinceDataRecord, CronInterval, SyncStatus } from './types';
 import {
   mockUsers, mockCompanies, mockExportRecords, mockComplaints, mockAuditLogs, mockNotifications,
   PRODUCTS, COUNTRIES, PROVINCES, PORTS, COMPLAINT_CATEGORIES,
+  mockProvinceApiSources, mockProvinceSyncLogs, mockProvinceDataRecords,
 } from './mock-data';
 import { useAuth } from './auth';
 
@@ -24,6 +25,9 @@ interface PortalData {
   masterItems: Record<MasterCategory, string[]>;
   auditLogs: AuditLog[];
   notifications: Notification[];
+  provinceApiSources: ProvinceApiSource[];
+  provinceSyncLogs: ProvinceSyncLog[];
+  provinceDataRecords: ProvinceDataRecord[];
 }
 
 const DOCUMENT_TYPES = [
@@ -54,6 +58,9 @@ function seedData(): PortalData {
     },
     auditLogs: mockAuditLogs.map(l => ({ ...l })),
     notifications: mockNotifications.map(n => ({ ...n })),
+    provinceApiSources: mockProvinceApiSources.map(s => ({ ...s })),
+    provinceSyncLogs: mockProvinceSyncLogs.map(l => ({ ...l })),
+    provinceDataRecords: mockProvinceDataRecords.map(r => ({ ...r })),
   };
 }
 
@@ -116,6 +123,14 @@ interface DataStoreContextType {
   addMasterItem: (category: MasterCategory, value: string) => void;
   updateMasterItem: (category: MasterCategory, index: number, value: string) => void;
   deleteMasterItem: (category: MasterCategory, index: number) => void;
+  // Province API integrations
+  provinceApiSources: ProvinceApiSource[];
+  provinceSyncLogs: ProvinceSyncLog[];
+  provinceDataRecords: ProvinceDataRecord[];
+  addProvinceApiSource: (input: Partial<ProvinceApiSource>) => ProvinceApiSource;
+  updateProvinceApiSource: (id: string, patch: Partial<ProvinceApiSource>) => void;
+  deleteProvinceApiSource: (id: string) => void;
+  triggerProvinceSync: (sourceId: string) => void;
   // Misc
   markAllNotificationsRead: () => void;
   resetData: () => void;
@@ -130,6 +145,7 @@ const DataStoreContext = createContext<DataStoreContextType>({
   isLoaded: false,
   users: [], companies: [], exportRecords: [], complaints: [],
   masterItems: EMPTY_MASTER, auditLogs: [], notifications: [],
+  provinceApiSources: [], provinceSyncLogs: [], provinceDataRecords: [],
   addUser: () => { throw new Error('DataProvider missing'); },
   updateUser: () => {}, deleteUser: () => {},
   reviewRegistration: () => {},
@@ -138,6 +154,8 @@ const DataStoreContext = createContext<DataStoreContextType>({
   addComplaint: () => { throw new Error('DataProvider missing'); },
   updateComplaint: () => {}, resolveComplaint: () => {}, escalateComplaint: () => {}, addComplaintNote: () => {},
   addMasterItem: () => {}, updateMasterItem: () => {}, deleteMasterItem: () => {},
+  addProvinceApiSource: () => { throw new Error('DataProvider missing'); },
+  updateProvinceApiSource: () => {}, deleteProvinceApiSource: () => {}, triggerProvinceSync: () => {},
   markAllNotificationsRead: () => {}, resetData: () => {},
 });
 
@@ -149,6 +167,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<PortalData>({
     users: [], companies: [], exportRecords: [], complaints: [],
     masterItems: EMPTY_MASTER, auditLogs: [], notifications: [],
+    provinceApiSources: [], provinceSyncLogs: [], provinceDataRecords: [],
   });
   const [isLoaded, setIsLoaded] = useState(false);
   const actorRef = useRef<Actor>({ id: 'system', name: 'System', role: 'super_admin' });
@@ -660,6 +679,156 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } catch { /* ignore */ }
   }, []);
 
+  // ---------- Province API Sources ----------
+  const addProvinceApiSource = useCallback((input: Partial<ProvinceApiSource>): ProvinceApiSource => {
+    let created!: ProvinceApiSource;
+    mutate(null, prev => {
+      created = {
+        id: uid('pas'),
+        name: input.name || 'New API Source',
+        province: input.province || 'Punjab',
+        system_name: input.system_name || '',
+        api_url: input.api_url || '',
+        api_key: input.api_key,
+        cron_interval: input.cron_interval || 'daily',
+        cron_expression: input.cron_expression,
+        is_active: input.is_active ?? true,
+        total_records_pulled: 0,
+        created_at: nowISO(),
+        updated_at: nowISO(),
+        created_by: actorRef.current.id,
+      };
+      const actor = actorRef.current;
+      const log: AuditLog = {
+        id: uid('al'), user_id: actor.id, user_name: actor.name, user_role: actor.role,
+        action: 'Create API Source', module: 'Province Integrations', record_id: created.id,
+        new_value: `${created.name} (${created.province}) — ${created.api_url}`,
+        ip_address: '127.0.0.1', created_at: nowISO(),
+      };
+      return {
+        provinceApiSources: [...prev.provinceApiSources, created],
+        auditLogs: [log, ...prev.auditLogs],
+      };
+    });
+    return created;
+  }, [mutate]);
+
+  const updateProvinceApiSource = useCallback((id: string, patch: Partial<ProvinceApiSource>) => {
+    mutate(null, prev => {
+      const source = prev.provinceApiSources.find(s => s.id === id);
+      if (!source) return {};
+      const actor = actorRef.current;
+      const log: AuditLog = {
+        id: uid('al'), user_id: actor.id, user_name: actor.name, user_role: actor.role,
+        action: 'Update API Source', module: 'Province Integrations', record_id: source.id,
+        new_value: JSON.stringify(patch).substring(0, 200),
+        ip_address: '127.0.0.1', created_at: nowISO(),
+      };
+      return {
+        provinceApiSources: prev.provinceApiSources.map(s => s.id === id ? { ...s, ...patch, updated_at: nowISO() } : s),
+        auditLogs: [log, ...prev.auditLogs],
+      };
+    });
+  }, [mutate]);
+
+  const deleteProvinceApiSource = useCallback((id: string) => {
+    mutate(null, prev => {
+      const source = prev.provinceApiSources.find(s => s.id === id);
+      const actor = actorRef.current;
+      const log: AuditLog | null = source ? {
+        id: uid('al'), user_id: actor.id, user_name: actor.name, user_role: actor.role,
+        action: 'Delete API Source', module: 'Province Integrations', record_id: source.id,
+        previous_value: source.name, ip_address: '127.0.0.1', created_at: nowISO(),
+      } : null;
+      return {
+        provinceApiSources: prev.provinceApiSources.filter(s => s.id !== id),
+        provinceSyncLogs: prev.provinceSyncLogs.filter(l => l.source_id !== id),
+        provinceDataRecords: prev.provinceDataRecords.filter(r => r.source_id !== id),
+        auditLogs: log ? [log, ...prev.auditLogs] : prev.auditLogs,
+      };
+    });
+  }, [mutate]);
+
+  const triggerProvinceSync = useCallback((sourceId: string) => {
+    mutate(null, prev => {
+      const source = prev.provinceApiSources.find(s => s.id === sourceId);
+      if (!source) return {};
+      const actor = actorRef.current;
+
+      // Simulate a sync: generate random records and a sync log
+      const syncStart = nowISO();
+      const recordCount = Math.floor(Math.random() * 30) + 3;
+      const syncDuration = Math.floor(Math.random() * 50000) + 5000;
+      const syncStatus: SyncStatus = Math.random() > 0.15 ? 'success' : 'partial';
+
+      const syncLog: ProvinceSyncLog = {
+        id: uid('psl'),
+        source_id: source.id,
+        source_name: source.name,
+        province: source.province,
+        status: syncStatus,
+        records_pulled: syncStatus === 'partial' ? Math.floor(recordCount / 2) : recordCount,
+        started_at: syncStart,
+        completed_at: new Date(Date.now() + syncDuration).toISOString(),
+        duration_ms: syncDuration,
+        error_message: syncStatus === 'partial' ? 'Partial sync — some records timed out' : undefined,
+        triggered_by: 'manual',
+      };
+
+      // Generate pulled records
+      const newRecords: ProvinceDataRecord[] = Array.from({ length: syncLog.records_pulled }, (_, i) => ({
+        id: uid('pdr'),
+        source_id: source.id,
+        source_name: source.name,
+        province: source.province,
+        record_type: ['export_permit', 'phyto_certificate', 'quality_inspection', 'trade_license', 'origin_certificate'][i % 5],
+        data: {
+          reference_number: `REF-${source.province.substring(0, 2).toUpperCase()}-${Date.now()}-${i}`,
+          product: ['Basmati Rice', 'Mango (Chaunsa)', 'Kinnow', 'Dates (Aseel)', 'Sesame Seeds'][i % 5],
+          quantity: Math.floor(Math.random() * 400) + 10,
+          unit: 'Metric Tons',
+          exporter_name: `Exporter ${i + 1}`,
+          destination: ['China', 'UAE', 'Saudi Arabia', 'UK', 'Malaysia'][i % 5],
+          status: 'synced',
+          issue_date: new Date().toISOString(),
+        },
+        external_id: `EXT-${Date.now()}-${i}`,
+        synced_at: syncStart,
+      }));
+
+      const log: AuditLog = {
+        id: uid('al'), user_id: actor.id, user_name: actor.name, user_role: actor.role,
+        action: 'Trigger Sync', module: 'Province Integrations', record_id: source.id,
+        new_value: `${syncLog.records_pulled} records synced (${syncStatus})`,
+        ip_address: '127.0.0.1', created_at: nowISO(),
+      };
+
+      const notification: Notification = {
+        id: uid('n'), user_id: 'u1',
+        title: syncStatus === 'success' ? 'Sync Completed' : 'Sync Partially Completed',
+        message: `${source.name}: ${syncLog.records_pulled} records pulled from ${source.province} API.`,
+        type: syncStatus === 'success' ? 'success' : 'warning',
+        is_read: false, link: '/admin/province-integrations', created_at: nowISO(),
+      };
+
+      return {
+        provinceApiSources: prev.provinceApiSources.map(s => s.id === sourceId ? {
+          ...s,
+          last_sync_at: syncStart,
+          last_sync_status: syncStatus,
+          last_sync_records: syncLog.records_pulled,
+          last_sync_error: syncStatus === 'partial' ? 'Partial sync — some records timed out' : undefined,
+          total_records_pulled: s.total_records_pulled + syncLog.records_pulled,
+          updated_at: nowISO(),
+        } : s),
+        provinceSyncLogs: [syncLog, ...prev.provinceSyncLogs],
+        provinceDataRecords: [...newRecords, ...prev.provinceDataRecords],
+        auditLogs: [log, ...prev.auditLogs],
+        notifications: [notification, ...prev.notifications],
+      };
+    });
+  }, [mutate]);
+
   const value: DataStoreContextType = {
     isLoaded,
     users: data.users,
@@ -669,11 +838,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
     masterItems: data.masterItems,
     auditLogs: data.auditLogs,
     notifications: data.notifications,
+    provinceApiSources: data.provinceApiSources,
+    provinceSyncLogs: data.provinceSyncLogs,
+    provinceDataRecords: data.provinceDataRecords,
     addUser, updateUser, deleteUser,
     reviewRegistration,
     addExportRecord, updateExportRecord, deleteExportRecord, reviewExportRecord,
     addComplaint, updateComplaint, resolveComplaint, escalateComplaint, addComplaintNote,
     addMasterItem, updateMasterItem, deleteMasterItem,
+    addProvinceApiSource, updateProvinceApiSource, deleteProvinceApiSource, triggerProvinceSync,
     markAllNotificationsRead, resetData,
   };
 
