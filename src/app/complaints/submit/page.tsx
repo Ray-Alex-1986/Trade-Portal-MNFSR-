@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth';
 import { generateId } from '@/lib/utils';
+import DemoModeNotice from '@/components/DemoModeNotice';
 
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -136,6 +137,7 @@ export default function SubmitComplaintPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <DemoModeNotice />
       <header className="bg-gov-green-500 text-white py-4">
         <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">

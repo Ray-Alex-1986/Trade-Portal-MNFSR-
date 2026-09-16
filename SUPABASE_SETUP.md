@@ -26,7 +26,13 @@ For the supplied demo and registration flows:
 With `SUPABASE_SERVICE_ROLE_KEY` set, public registration runs server-side through `POST /api/register`: the account is created already confirmed and the profile plus company application are written with the service role, so the **Confirm email** setting does not matter. The browser-side sign-up path is only used when that key is absent.
 
 ## 4. Apply the database SQL
-Open **SQL Editor → New query** and run these files in this exact order:
+
+The quickest route is to paste all of [`supabase/setup.sql`](supabase/setup.sql)
+into **SQL Editor → New query** and run it once: it bundles every file below in
+the correct order. Rebuild it with `node scripts/build-supabase-setup.mjs` after
+changing any migration.
+
+To apply the sources individually, run them in this exact order:
 
 1. `supabase-schema.sql` — base tables, base RLS, institutions, and roles.
 2. `supabase/migrations/001_portal_updates.sql` — review columns, province tables, complete RLS, public complaint RPCs, and Realtime publication. It also enables `pgcrypto`, required for demo password hashing.
@@ -54,7 +60,11 @@ Demo@12345
 | Exporter | `exporter1@pakrice.com` |
 | Buyer | `buyer@chinagrain.cn` |
 
-Change these credentials before deploying any non-demo environment.
+Change these credentials before deploying any non-demo environment. Create a
+real administrator with `node supabase/bootstrap-super-admin.mjs`, then delete
+or deactivate the seeded accounts from **User Management**. Full hosting steps,
+including the Vercel variables and the redeploy requirement, are in
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## 6. Verify realtime behavior
 1. Run `npm run dev` and sign in as `superadmin@mnfsr.gov.pk`.

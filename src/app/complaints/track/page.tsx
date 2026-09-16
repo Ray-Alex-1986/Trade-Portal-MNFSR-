@@ -10,6 +10,7 @@ import { useDataStore } from '@/lib/data-store';
 import { getStatusColor } from '@/lib/utils';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { usePortalBackend } from '@/lib/supabase/use-mock';
+import DemoModeNotice from '@/components/DemoModeNotice';
 
 function TrackComplaintPage() {
   const searchParams = useSearchParams();
@@ -71,6 +72,7 @@ function TrackComplaintPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <DemoModeNotice />
       <header className="bg-gov-green-500 text-white py-4">
         <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">

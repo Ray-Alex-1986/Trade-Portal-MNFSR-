@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useMemo } from 'react';
 import { FileText, Shield, AlertTriangle, TrendingUp, Globe, Users, Package, BarChart3, Phone, Mail, ChevronRight, ExternalLink } from 'lucide-react';
+import DemoModeNotice from '@/components/DemoModeNotice';
 import { useDataStore } from '@/lib/data-store';
 import { summarizePublicPortalStats, usePublicPortalStats } from '@/lib/public-portal-stats';
 import { formatNumber } from '@/lib/utils';
@@ -28,6 +29,8 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-white">
+      <DemoModeNotice />
+
       {/* Top Banner */}
       <div className="bg-gov-green-500 text-white text-center py-1.5 text-xs">
         <span className="font-medium">Government of Pakistan</span> | Ministry of National Food Security & Research | Ministry of Commerce

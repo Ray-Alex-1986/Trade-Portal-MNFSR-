@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
+import DemoModeNotice from '@/components/DemoModeNotice';
 import { useAuth } from '@/lib/auth';
 import { useDataStore } from '@/lib/data-store';
 import { getNavForRole, getNotificationsPath, ROLE_LABELS } from '@/lib/permissions';
@@ -195,6 +196,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </header>
 
           {/* Page Content */}
+          <DemoModeNotice />
+
           {/* pb-28 keeps the floating assistant from covering the last row of a list */}
           <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-28 md:pb-28">
             {children}
