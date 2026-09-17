@@ -214,9 +214,16 @@ export function MySqlDataProvider({ children }: { children: ReactNode }) {
 
   const markAllNotificationsRead = useCallback(() => run('mark_notifications_read'), [run]);
 
-  const resetData = useCallback(async (): Promise<MutationResult> => ({
-    error: 'Demo reset is unavailable for the MySQL production backend.',
-  }), []);
+  const resetData = useCallback(async (): Promise<MutationResult> => {
+    try {
+      const response = await fetch('/api/mysql/reset-demo', { method: 'POST', credentials: 'same-origin' });
+      await parseJson(response);
+      await reload();
+      return ok();
+    } catch (error) {
+      return fail(error, 'Demo reset failed.');
+    }
+  }, [reload]);
 
   const refresh = useCallback(async () => {
     await reload().catch(error => console.error('[mysql-data-store:refresh]', error));

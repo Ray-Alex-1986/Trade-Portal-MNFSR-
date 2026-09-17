@@ -4,12 +4,11 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Search, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
-import Image from 'next/image';
+import GovtLogo from '@/components/GovtLogo';
 import { Complaint } from '@/lib/types';
 import { useDataStore } from '@/lib/data-store';
 import { getStatusColor } from '@/lib/utils';
-import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import { usePortalBackend } from '@/lib/supabase/use-mock';
+import { usePortalBackend } from '@/lib/portal-backend';
 import DemoModeNotice from '@/components/DemoModeNotice';
 
 function TrackComplaintPage() {
@@ -36,19 +35,8 @@ function TrackComplaintPage() {
         if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
         setResult(body.complaint ?? null);
       } else {
-        const supabase = getSupabaseBrowserClient();
-        if (supabase) {
-          // SECURITY DEFINER RPC permits public tracking without exposing the
-          // complaints table to anonymous users.
-          const { data, error } = await supabase.rpc('get_complaint_by_tracking', {
-            p_tracking_number: trackingNumber,
-          });
-          if (error) throw error;
-          setResult(((data ?? [])[0] as Complaint | undefined) ?? null);
-        } else {
-          const found = complaints.find(c => c.tracking_number.toLowerCase() === trackingNumber.toLowerCase());
-          setResult(found || null);
-        }
+        const found = complaints.find(c => c.tracking_number.toLowerCase() === trackingNumber.toLowerCase());
+        setResult(found || null);
       }
     } catch (lookupError) {
       console.error('[trackComplaint]', lookupError);
@@ -76,7 +64,7 @@ function TrackComplaintPage() {
       <header className="bg-gov-green-500 text-white py-4">
         <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <Image src="/govt-pakistan-logo.png" alt="Government of Pakistan" width={36} height={36} />
+            <GovtLogo size={36} ring />
             <div><p className="font-bold text-sm">Track Complaint</p><p className="text-xs text-gov-green-200">Government of Pakistan</p></div>
           </Link>
           <Link href="/complaints/submit" className="text-sm text-gov-green-100 hover:text-white">Submit Complaint</Link>

@@ -39,8 +39,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 });
     }
 
+    await getMySqlPool().execute('UPDATE profiles SET last_login = UTC_TIMESTAMP(3) WHERE id = ?', [profile.id]);
     const lastLogin = new Date().toISOString();
-    await getMySqlPool().execute('UPDATE profiles SET last_login = ? WHERE id = ?', [lastLogin, profile.id]);
     const session = createMySqlSession(profile.id);
     const response = NextResponse.json({
       user: {

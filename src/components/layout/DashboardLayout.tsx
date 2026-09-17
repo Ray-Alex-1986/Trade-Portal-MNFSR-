@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import DemoModeNotice from '@/components/DemoModeNotice';
+import GovtLogo from '@/components/GovtLogo';
 import { useAuth } from '@/lib/auth';
 import { useDataStore } from '@/lib/data-store';
 import { getNavForRole, getNotificationsPath, ROLE_LABELS } from '@/lib/permissions';
-import { usePortalBackend } from '@/lib/supabase/use-mock';
+import { usePortalBackend } from '@/lib/portal-backend';
 import { cn } from '@/lib/utils';
 import {
   LogOut, Menu, Bell, Search, Moon, Sun, Database, X,
@@ -76,8 +76,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="flex flex-col h-full">
             {/* Logo */}
             <div className="flex items-center gap-3 px-4 py-5 border-b border-gov-green-600">
-              <Link href="/" className="w-10 h-10 bg-white rounded-full flex items-center justify-center p-0.5 flex-shrink-0">
-                <Image src="/govt-pakistan-logo.png" alt="Government of Pakistan" width={36} height={36} />
+              <Link href="/" className="flex-shrink-0" aria-label="Export Portal home">
+                <GovtLogo size={40} ring />
               </Link>
               <div className="min-w-0">
                 <p className="font-bold text-sm leading-tight">Export Portal</p>

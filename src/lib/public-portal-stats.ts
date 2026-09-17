@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Company, Complaint, ExportRecord, User } from './types';
-import { getSupabaseBrowserClient } from './supabase/client';
-import { usePortalBackend } from './supabase/use-mock';
+import { usePortalBackend } from './portal-backend';
 
 export interface PublicPortalStats {
   registeredExporters: number;
@@ -110,7 +109,6 @@ function mapPublicStats(payload: Record<string, unknown>): PublicPortalStats {
 
 export function usePublicPortalStats(fallback: PublicPortalStats) {
   const backend = usePortalBackend();
-  const supabase = getSupabaseBrowserClient();
   const [stats, setStats] = useState(fallback);
   const [isLoading, setIsLoading] = useState(backend !== 'mock');
 
@@ -128,16 +126,10 @@ export function usePublicPortalStats(fallback: PublicPortalStats) {
     const load = async () => {
       setIsLoading(true);
       try {
-        if (backend === 'mysql') {
-          const response = await fetch('/api/mysql/public-stats', { cache: 'no-store' });
-          const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-          if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : `HTTP ${response.status}`);
-          if (!cancelled) setStats(mapPublicStats(payload));
-        } else if (supabase) {
-          const { data, error } = await supabase.rpc('get_public_portal_stats');
-          if (error) throw error;
-          if (!cancelled && data && typeof data === 'object') setStats(mapPublicStats(data as Record<string, unknown>));
-        }
+        const response = await fetch('/api/mysql/public-stats', { cache: 'no-store' });
+        const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+        if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : `HTTP ${response.status}`);
+        if (!cancelled) setStats(mapPublicStats(payload));
       } catch (error) {
         console.error('[public-portal-stats]', error);
         if (!cancelled) setStats(fallback);
@@ -152,7 +144,7 @@ export function usePublicPortalStats(fallback: PublicPortalStats) {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [backend, fallback, supabase]);
+  }, [backend, fallback]);
 
   return { stats, isLoading };
 }

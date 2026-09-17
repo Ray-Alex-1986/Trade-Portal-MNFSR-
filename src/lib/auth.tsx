@@ -3,22 +3,16 @@
 import { ReactNode, useContext } from 'react';
 import { UserRole } from './types';
 import { getPermissions, isAdminSection, canReviewStage, RolePermissions } from './permissions';
-import { usePortalBackend } from './supabase/use-mock';
+import { usePortalBackend } from './portal-backend';
 import { AuthContext } from './auth-context';
 import { MockAuthProvider } from './auth-mock';
 import { MySqlAuthProvider } from './auth-mysql';
-import { SupabaseAuthProvider } from './auth-supabase';
 
-/**
- * Authentication dispatcher. Both providers expose the unchanged useAuth()
- * contract, letting every existing page run in either offline demo or real
- * Supabase mode without knowing which backend is active.
- */
+/** Authentication dispatcher for MySQL (default) or offline mock mode. */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const backend = usePortalBackend();
   if (backend === 'mock') return <MockAuthProvider>{children}</MockAuthProvider>;
-  if (backend === 'mysql') return <MySqlAuthProvider>{children}</MySqlAuthProvider>;
-  return <SupabaseAuthProvider>{children}</SupabaseAuthProvider>;
+  return <MySqlAuthProvider>{children}</MySqlAuthProvider>;
 }
 
 export function useAuth() {

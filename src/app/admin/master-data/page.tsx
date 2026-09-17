@@ -6,7 +6,7 @@ import RoleGuard from '@/components/auth/RoleGuard';
 import { useToast } from '@/components/ui/Toast';
 import { ROUTE_ROLES } from '@/lib/permissions';
 import { useDataStore, MasterCategory } from '@/lib/data-store';
-import { usePortalBackend } from '@/lib/supabase/use-mock';
+import { usePortalBackend } from '@/lib/portal-backend';
 import { Plus, Edit, Trash2, Database, X, Save, Lock } from 'lucide-react';
 
 const categoryLabels: Record<MasterCategory, string> = {

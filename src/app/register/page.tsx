@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ChevronRight, ChevronLeft, CheckCircle, AlertCircle, Upload, X, FileText } from 'lucide-react';
-import Image from 'next/image';
+import GovtLogo from '@/components/GovtLogo';
 import { generateId } from '@/lib/utils';
 import { useDataStore } from '@/lib/data-store';
 import DemoModeNotice from '@/components/DemoModeNotice';
@@ -288,7 +288,7 @@ export default function RegisterPage() {
       <header className="bg-gov-green-500 text-white py-4">
         <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <Image src="/govt-pakistan-logo.png" alt="Government of Pakistan" width={36} height={36} />
+            <GovtLogo size={36} ring />
             <div>
               <p className="font-bold text-sm">Export Portal Registration</p>
               <p className="text-xs text-gov-green-200">Government of Pakistan</p>

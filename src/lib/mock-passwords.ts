@@ -9,7 +9,7 @@
 const STORAGE_KEY = 'export_portal_passwords_v1';
 const SALT = 'export-portal-demo';
 
-/** Password accepted by every seeded demo account (matches the Supabase seed). */
+/** Password accepted by every seeded demo account. */
 export const DEMO_PASSWORD = 'Demo@12345';
 
 type PasswordMap = Record<string, string>;

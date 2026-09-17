@@ -1,6 +1,6 @@
 'use client';
 
-import { usePortalBackend } from '@/lib/supabase/use-mock';
+import { usePortalBackend } from '@/lib/portal-backend';
 import { AlertTriangle } from 'lucide-react';
 
 /**

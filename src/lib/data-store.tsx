@@ -5,10 +5,9 @@ import {
   User, Company, ExportRecord, Complaint, AuditLog, Notification,
   ProvinceApiSource, ProvinceSyncLog, ProvinceDataRecord,
 } from './types';
-import { usePortalBackend } from './supabase/use-mock';
+import { usePortalBackend } from './portal-backend';
 import { MockDataProvider } from './data-store-mock';
 import { MySqlDataProvider } from './data-store-mysql';
-import { SupabaseDataProvider } from './data-store-supabase';
 
 export type MasterCategory =
   | 'products' | 'countries' | 'provinces' | 'ports'
@@ -122,15 +121,13 @@ export const DataStoreContext = createContext<DataStoreContextType>({
 });
 
 /**
- * Data provider dispatcher. MockDataProvider keeps the original localStorage
- * demo behaviour; SupabaseDataProvider and MySqlDataProvider talk to their
- * respective server-authorized backends. All expose the same context.
+ * Data provider dispatcher. MockDataProvider keeps offline localStorage demo
+ * behaviour; MySqlDataProvider talks to the signed-session MySQL API.
  */
 export function DataProvider({ children }: { children: ReactNode }) {
   const backend = usePortalBackend();
   if (backend === 'mock') return <MockDataProvider>{children}</MockDataProvider>;
-  if (backend === 'mysql') return <MySqlDataProvider>{children}</MySqlDataProvider>;
-  return <SupabaseDataProvider>{children}</SupabaseDataProvider>;
+  return <MySqlDataProvider>{children}</MySqlDataProvider>;
 }
 
 export function useDataStore() {

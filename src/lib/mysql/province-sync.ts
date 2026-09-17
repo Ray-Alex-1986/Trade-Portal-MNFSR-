@@ -7,7 +7,7 @@ import { PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { getPermissions } from '@/lib/permissions';
 import { User } from '@/lib/types';
 import { getMySqlSessionUser } from './session';
-import { getMySqlPool, withMySqlTransaction } from './server';
+import { getMySqlPool, toMySqlDateTime, withMySqlTransaction } from './server';
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_RECORDS_PER_SYNC = 500;
@@ -169,7 +169,7 @@ async function notifyActor(
 }
 
 async function completeFailure(logId: string, source: ProvinceSourceRow, actor: User, startedMs: number, reason: string) {
-  const completedAt = new Date().toISOString();
+  const completedAt = toMySqlDateTime();
   await withMySqlTransaction(async connection => {
     await connection.execute(
       `UPDATE province_sync_logs
@@ -209,7 +209,7 @@ export async function runMySqlProvinceSync(request: Request, sourceId: string) {
   if (!Boolean(source.is_active)) throw new MySqlProvinceSyncError('Activate this API source before syncing it.');
 
   const logId = randomUUID();
-  const startedAt = new Date().toISOString();
+  const startedAt = toMySqlDateTime();
   const startedMs = Date.now();
   await pool.execute(
     `INSERT INTO province_sync_logs (id, source_id, source_name, province, status, records_pulled, started_at, triggered_by)
@@ -236,7 +236,7 @@ export async function runMySqlProvinceSync(request: Request, sourceId: string) {
     if (!response.ok) throw new MySqlProvinceSyncError(`Upstream returned HTTP ${response.status}.`, 502);
 
     const records = normaliseRecords(await readJsonPayload(response));
-    const completedAt = new Date().toISOString();
+    const completedAt = toMySqlDateTime();
     const durationMs = Date.now() - startedMs;
     await withMySqlTransaction(async connection => {
       await connection.execute('DELETE FROM province_data_records WHERE source_id = ?', [source.id]);

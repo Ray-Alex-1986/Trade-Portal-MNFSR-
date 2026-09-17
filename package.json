@@ -7,15 +7,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:migrate": "node mysql/setup-local.mjs",
+    "db:seed": "node mysql/seed-portal-data.mjs",
+    "db:setup": "node mysql/setup-local.mjs",
+    "db:seed-demo": "node mysql/seed-demo-users.mjs",
+    "db:seed-data": "node mysql/seed-portal-data.mjs",
+    "db:bootstrap-admin": "node mysql/bootstrap-super-admin.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@supabase/ssr": "^0.12.7",
-    "@supabase/supabase-js": "^2.116.0",
     "mysql2": "^3.24.4",
     "next": "^14.2.35",
     "react": "^18.3.1",

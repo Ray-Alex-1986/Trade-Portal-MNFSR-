@@ -7,7 +7,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth';
 import { ROLE_LABELS, ROUTE_ROLES } from '@/lib/permissions';
-import { usePortalBackend } from '@/lib/supabase/use-mock';
+import { usePortalBackend } from '@/lib/portal-backend';
 import { User, UserRole } from '@/lib/types';
 import { formatDateTime } from '@/lib/utils';
 import { Search, Plus, Edit, Trash2, UserCheck, UserX, X, Save, Users as UsersIcon } from 'lucide-react';
@@ -41,8 +41,8 @@ export default function UserManagementPage() {
   const [newUser, setNewUser] = useState({ full_name: '', email: '', role: 'exporter', institution: '', password: '' });
 
   // The demo backend keeps a local password; MySQL requires an administrator to
-  // set one; Supabase can either set one or email an invitation.
-  const passwordRequired = backend !== 'supabase';
+  // MySQL always requires an initial password for newly created accounts.
+  const passwordRequired = backend === 'mysql';
   const minPasswordLength = backend === 'mock' ? 8 : 12;
   const institutions = masterItems.institutions ?? [];
 

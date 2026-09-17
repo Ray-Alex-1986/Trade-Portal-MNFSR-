@@ -5,19 +5,27 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getHomeForRole } from '@/lib/permissions';
-import { useMockData } from '@/lib/supabase/use-mock';
+import { useMockData } from '@/lib/portal-backend';
 import { DEMO_PASSWORD } from '@/lib/mock-passwords';
 import DemoModeNotice from '@/components/DemoModeNotice';
+import GovtLogo from '@/components/GovtLogo';
 import { Eye, EyeOff, AlertCircle, Info } from 'lucide-react';
-import Image from 'next/image';
 
 const DEMO_ACCOUNTS = [
   { label: 'MNFSR Super Admin', email: 'superadmin@mnfsr.gov.pk' },
+  { label: 'MoC Admin', email: 'admin@moc.gov.pk' },
   { label: 'TDAP Admin', email: 'tdap.admin@tdap.gov.pk' },
+  { label: 'TDAP Officer', email: 'officer1@tdap.gov.pk' },
   { label: 'NAFSA Admin', email: 'nafsa.admin@nafsa.gov.pk' },
+  { label: 'NAFSA Officer', email: 'officer1@nafsa.gov.pk' },
+  { label: 'TIC Beijing', email: 'tic.china@tdap.gov.pk' },
   { label: 'Exporter', email: 'exporter1@pakrice.com' },
   { label: 'Buyer', email: 'buyer@chinagrain.cn' },
+  { label: 'Auditor', email: 'auditor@mnfsr.gov.pk' },
 ];
+
+/** Local/dev convenience: click a role to prefill email + Demo@12345. */
+const showQuickLogins = process.env.NEXT_PUBLIC_SHOW_DEMO_LOGINS === 'true';
 
 function LoginPage() {
   const { login, user, isLoading: authLoading } = useAuth();
@@ -31,6 +39,7 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   const redirectTo = searchParams.get('next');
+  const showAccountPicker = isMockMode || showQuickLogins;
 
   // Already signed in: skip the form entirely.
   useEffect(() => {
@@ -68,20 +77,20 @@ function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gov-green-500 via-gov-green-600 to-gov-green-700 flex flex-col">
       <DemoModeNotice />
-      <div className="flex-1 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+      <div className="flex-1 flex items-center justify-center p-4 py-8">
+      <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 text-white/80 hover:text-white text-sm mb-4">
             &larr; Back to Portal
           </Link>
-          <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4 p-1">
-            <Image src="/govt-pakistan-logo.png" alt="Government of Pakistan" width={64} height={64} />
+          <div className="mx-auto mb-4 flex justify-center">
+            <GovtLogo size={80} ring />
           </div>
           <h1 className="text-2xl font-bold text-white">Export Portal Login</h1>
           <p className="text-gov-green-100 text-sm mt-1">Government of Pakistan</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="bg-white rounded-2xl shadow-xl p-8 md:p-10">
           <h2 className="text-xl font-bold text-gray-900 mb-6">Sign In</h2>
 
           {error && (
@@ -140,26 +149,28 @@ function LoginPage() {
             </Link>
           </div>
 
-          {isMockMode ? (
+          {showAccountPicker ? (
             <div className="mt-6 pt-6 border-t">
-              <p className="flex items-center gap-2 text-xs font-medium text-gray-600 mb-2">
-                <Info className="w-3.5 h-3.5" /> Demo mode — select an account to prefill
+              <p className="flex items-center gap-2 text-xs font-medium text-gray-600 mb-3">
+                <Info className="w-3.5 h-3.5" />
+                {isMockMode ? 'Demo mode — select an account to prefill' : 'Quick login — select an account to prefill'}
               </p>
-              <div className="grid grid-cols-1 gap-1.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {DEMO_ACCOUNTS.map(account => (
                   <button
                     key={account.email}
                     type="button"
                     onClick={() => useDemoAccount(account.email)}
-                    className="flex items-center justify-between text-left text-xs px-3 py-2 rounded-lg border hover:border-gov-green-500 hover:bg-gov-green-50 transition-colors"
+                    className="flex flex-col items-start text-left text-xs px-3 py-2.5 rounded-lg border hover:border-gov-green-500 hover:bg-gov-green-50 transition-colors"
                   >
-                    <span className="font-medium text-gray-700">{account.label}</span>
-                    <span className="text-gray-400 truncate ml-2">{account.email}</span>
+                    <span className="font-medium text-gray-800">{account.label}</span>
+                    <span className="text-gray-400 truncate w-full mt-0.5">{account.email}</span>
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-gray-400">
-                Demo password: <span className="font-mono">{DEMO_PASSWORD}</span>. Accounts you register use your own password.
+              <p className="mt-3 text-xs text-gray-400">
+                Password: <span className="font-mono">{DEMO_PASSWORD}</span>
+                {isMockMode ? '. Accounts you register use your own password.' : '. Local MySQL seed accounts only.'}
               </p>
             </div>
           ) : (

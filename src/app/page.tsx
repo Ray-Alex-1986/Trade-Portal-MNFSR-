@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { useMemo } from 'react';
 import { FileText, Shield, AlertTriangle, TrendingUp, Globe, Users, Package, BarChart3, Phone, Mail, ChevronRight, ExternalLink } from 'lucide-react';
 import DemoModeNotice from '@/components/DemoModeNotice';
+import GovtLogo from '@/components/GovtLogo';
 import { useDataStore } from '@/lib/data-store';
 import { summarizePublicPortalStats, usePublicPortalStats } from '@/lib/public-portal-stats';
 import { formatNumber } from '@/lib/utils';
@@ -40,7 +40,7 @@ export default function HomePage() {
       <header className="bg-white border-b shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Image src="/govt-pakistan-logo.png" alt="Government of Pakistan" width={48} height={48} />
+            <GovtLogo size={48} />
             <div>
               <h1 className="text-lg font-bold text-gray-900 leading-tight">National Export Portal</h1>
               <p className="text-xs text-gray-500">Government of Pakistan | Registration, Certification & Complaint Management</p>
@@ -99,7 +99,7 @@ export default function HomePage() {
           <div className="flex flex-wrap items-center justify-center gap-8 md:gap-16">
             {['MNFSR', 'Ministry of Commerce', 'TDAP', 'NAFSA'].map(org => (
               <div key={org} className="flex items-center gap-2 text-gray-400">
-                <Image src="/govt-pakistan-logo.png" alt={org} width={40} height={40} />
+                <GovtLogo size={40} />
                 <span className="text-sm font-medium text-gray-500">{org}</span>
               </div>
             ))}
@@ -271,7 +271,7 @@ export default function HomePage() {
               <p className="text-sm text-gray-500">Response within 24 hours</p>
             </div>
             <div className="card p-6 text-center">
-              <Image src="/govt-pakistan-logo.png" alt="Office" width={32} height={32} className="mx-auto mb-3" />
+              <GovtLogo size={32} className="mx-auto mb-3" />
               <h4 className="font-semibold text-gray-900 mb-1">Office</h4>
               <p className="text-sm text-gray-500">TDAP Head Office</p>
               <p className="text-sm text-gray-500">Islamabad, Pakistan</p>
@@ -286,7 +286,7 @@ export default function HomePage() {
           <div className="grid md:grid-cols-4 gap-8 mb-8">
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <Image src="/govt-pakistan-logo.png" alt="Export Portal" width={24} height={24} />
+                <GovtLogo size={24} />
                 <span className="text-white font-semibold">Export Portal</span>
               </div>
               <p className="text-sm">National Export Registration, Certification & Complaint Management Portal of Pakistan.</p>

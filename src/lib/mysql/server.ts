@@ -9,9 +9,9 @@ type GlobalWithPool = typeof globalThis & {
 };
 
 function requiredDatabaseUrl(): string {
-  const value = process.env.MYSQL_DATABASE_URL;
+  const value = process.env.MYSQL_DATABASE_URL || process.env.DATABASE_URL;
   if (!value) {
-    throw new Error('MYSQL_DATABASE_URL is not configured.');
+    throw new Error('DATABASE_URL or MYSQL_DATABASE_URL is not configured.');
   }
   return value;
 }
@@ -19,12 +19,12 @@ function requiredDatabaseUrl(): string {
 function createMySqlPool(): Pool {
   const url = new URL(requiredDatabaseUrl());
   if (!['mysql:', 'mysqls:'].includes(url.protocol)) {
-    throw new Error('MYSQL_DATABASE_URL must use the mysql:// or mysqls:// protocol.');
+    throw new Error('DATABASE_URL must use the mysql:// or mysqls:// protocol.');
   }
 
   const port = Number(url.port || '3306');
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('MYSQL_DATABASE_URL contains an invalid port.');
+    throw new Error('DATABASE_URL contains an invalid port.');
   }
 
   const options: PoolOptions = {
@@ -60,7 +60,12 @@ export function getMySqlPool(): Pool {
 }
 
 export function isMySqlConfigured(): boolean {
-  return Boolean(process.env.MYSQL_DATABASE_URL && process.env.MYSQL_SESSION_SECRET);
+  return Boolean((process.env.MYSQL_DATABASE_URL || process.env.DATABASE_URL) && process.env.MYSQL_SESSION_SECRET);
+}
+
+/** MySQL DATETIME(3) rejects ISO strings that contain `T` / `Z`. */
+export function toMySqlDateTime(value: Date = new Date()): string {
+  return value.toISOString().slice(0, 23).replace('T', ' ');
 }
 
 export async function withMySqlTransaction<T>(callback: (connection: PoolConnection) => Promise<T>): Promise<T> {
